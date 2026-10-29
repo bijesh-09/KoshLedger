@@ -1,4 +1,4 @@
-from sqlalchemy import String, BigInteger, TIMESTAMP, ForeignKey, func, Identity, CheckConstraint, Text, Index, UniqueConstraint, MetaData, text
+from sqlalchemy import String, BigInteger, TIMESTAMP, ForeignKey, func, Identity, CheckConstraint, Text, Index, UniqueConstraint, MetaData, text, Boolean
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.dialects.postgresql import JSONB
@@ -21,14 +21,19 @@ class Base(AsyncAttrs, DeclarativeBase):
 class User(Base):
     # treasury and merchant will be seeded in users table
     __tablename__ = "users"
-
+    __table_args__ = (
+        CheckConstraint("char_length(username) BETWEEN 3 AND 15", name="username_length"), 
+    )
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    username: Mapped[str] = mapped_column(String(15), unique=True)
     email: Mapped[str] = mapped_column(String(255), unique=True)
     password: Mapped[str]
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default=text("True"))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=(func.now()))
+    deactivated_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True)) # Never delete user when user tryna delete, just mark it as delete
 
-    wallets: Mapped[list["Wallet"]] = relationship(back_populates="user", lazy="raise")  # its not necessary a user must ve a wallet so ["Wallet"] can be an emty list for that user
+    wallet: Mapped["Wallet"] = relationship(back_populates="user", lazy="raise", uselist=False) 
 
 class Wallet(Base):
     __tablename__ = "wallets"
@@ -44,11 +49,11 @@ class Wallet(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     kind: Mapped[str] = mapped_column(String(20), server_default='user')
-    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"), index=True, unique=True)
     balance_paisa: Mapped[int] = mapped_column(BigInteger, server_default="0") # server_default is the text for SQLAlchemy which it passes to query, so dont use bare Python int
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=(func.now()))
 
-    user: Mapped["User"] = relationship(back_populates="wallets", lazy="raise") 
+    user: Mapped["User"] = relationship(back_populates="wallet", lazy="raise") 
 
 class Transaction(Base):
     __tablename__ = "transactions"
