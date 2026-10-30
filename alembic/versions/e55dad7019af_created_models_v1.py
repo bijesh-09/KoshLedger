@@ -161,7 +161,7 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['transaction_id'], ['transactions.id'], name=op.f('fk_idempotency_keys_transaction_id_transactions'), ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], name=op.f('fk_idempotency_keys_user_id_users'), ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id', name=op.f('pk_idempotency_keys')),
-    sa.UniqueConstraint('user_id', 'key', name='key_user_pair')
+    sa.UniqueConstraint('user_id', 'key', name='uq_key_user_pair')
     )
     op.create_table('ledger_entries',
     sa.Column('id', sa.BigInteger(), sa.Identity(always=True), nullable=False),
