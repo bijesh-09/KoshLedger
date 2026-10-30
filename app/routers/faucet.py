@@ -220,8 +220,8 @@ async def claim_faucet(
         # create the response_json as our schemas.FaucetResponse
         response_data = {
             "transaction_reference": tx.reference,
-            "credited_paisa": FAUCET_AMOUNT_PAISA,
-            "user_balance_paisa": user_wallet.balance_paisa
+            "credited_rupees": float(schemas.paisa_to_rupees(FAUCET_AMOUNT_PAISA)),
+            "user_balance_rupees": float(schemas.paisa_to_rupees(user_wallet.balance_paisa))
         }
 
         # update the idempotency row to "completed" status

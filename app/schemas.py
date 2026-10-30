@@ -1,6 +1,11 @@
-from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict, model_validator
 import re # regex engine
 from datetime import datetime
+from decimal import Decimal
+
+
+def paisa_to_rupees(amount_paisa: int) -> Decimal:
+    return (Decimal(amount_paisa) / 100).quantize(Decimal("0.01"))
 
 class UserBase(BaseModel):
     username: str = Field(min_length=3, max_length=15)
@@ -41,9 +46,16 @@ class UserBase(BaseModel):
         return password
 
 class WalletBalance(BaseModel):
-    model_config = ConfigDict(from_attributes=True) # it enables pydantic to read wallet.balance_paisa
+    balance_rupees: Decimal
 
-    balance_paisa: int # >=0
+    @model_validator(mode="before")
+    @classmethod
+    def convert_wallet_balance(cls, wallet):
+        # Wallet balances stay in paisa in the database; expose rupees in API responses.
+        balance_paisa = getattr(wallet, "balance_paisa", None)
+        if balance_paisa is not None:
+            return {"balance_rupees": paisa_to_rupees(balance_paisa)}
+        return wallet
 
 class UserCreated(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -78,5 +90,31 @@ class TokenData(BaseModel):
 
 class FaucetResponse(BaseModel):
     transaction_reference: str
-    credited_paisa: int
-    user_balance_paisa: int
+    credited_rupees: Decimal
+    user_balance_rupees: Decimal
+
+class TransferRequest(BaseModel):
+    recipient_username: str = Field(min_length=3, max_length=15)
+    amount_rupees: Decimal = Field(gt=0, max_digits=19, decimal_places=2)
+
+    @field_validator("amount_rupees")
+    @classmethod
+    def amount_must_fit_paisa_bigint(cls, amount_rupees: Decimal) -> Decimal:
+        if amount_rupees > Decimal("92233720368547758.07"):
+            raise ValueError("Amount exceeds the maximum supported wallet amount")
+        return amount_rupees
+
+    @field_validator("recipient_username")
+    @classmethod
+    def lowercase_recipient_username(cls, username: str) -> str:
+        return username.lower()
+
+    @property # adds the following fn as a class attr
+    def amount_paisa(self) -> int:
+        return int(self.amount_rupees * 100)
+
+class TransferResponse(BaseModel):
+    transaction_reference: str
+    transferred_rupees: Decimal
+    sender_balance_rupees: Decimal
+    recipient_balance_rupees: Decimal
