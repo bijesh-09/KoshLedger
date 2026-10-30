@@ -6,12 +6,14 @@ from sqlalchemy import (
     func,
     Identity,
     CheckConstraint,
+    UniqueConstraint,
+    PrimaryKeyConstraint,
     Text,
     Index,
-    UniqueConstraint,
     MetaData,
     text,
-    Boolean
+    Boolean,
+    Integer
 ) 
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs
@@ -48,6 +50,11 @@ class User(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(TIMESTAMP(timezone=True)) # Never delete user when user tryna delete, just mark it as delete
 
     wallet: Mapped["Wallet"] = relationship(back_populates="user", lazy="raise", uselist=False) 
+    favourites: Mapped[list["Product"]] = relationship(
+        secondary="user_favourites",
+        back_populates="favourited_by",
+        lazy="raise",
+    )
 
 class Wallet(Base):
     __tablename__ = "wallets"
@@ -88,6 +95,10 @@ class Transaction(Base):
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=(func.now()))
     
     entries: Mapped[list["LedgerEntry"]] = relationship(back_populates="transaction", lazy="raise")
+    purchase_items: Mapped[list["PurchaseItem"]] = relationship(
+        back_populates="transaction",
+        lazy="raise",
+    )
 
 class LedgerEntry(Base):
     __tablename__ = "ledger_entries"
@@ -111,7 +122,7 @@ class IdempotencyKey(Base):
         # The unique constraint settles races between identical concurrent requests, 
         #   it makes combn of user_id and key coln as unique which enables multiple users to use same key or 
         #       one user use multiple keys, but never a user using same key again
-        UniqueConstraint("user_id", "key", name="key_user_pair"),
+        UniqueConstraint("user_id", "key", name="uq_key_user_pair"),
         CheckConstraint("status IN ('in_progress', 'completed')", name="status"),
         CheckConstraint(
             "status <> 'completed' OR response_json IS NOT NULL",
@@ -130,4 +141,77 @@ class IdempotencyKey(Base):
     transaction_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("transactions.id", ondelete="RESTRICT")) 
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=(func.now()))
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=(func.now()), onupdate=func.now())
-    
+
+class Product(Base):
+    __tablename__ = "products"
+    __table_args__ = (
+        CheckConstraint("unit_price_paisa > 0", name="price_positive"),
+        CheckConstraint("in_stock BETWEEN 0 AND 100", name="in_stock_range"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
+    image_name: Mapped[str] = mapped_column(String(255), unique=True)
+    image_title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text)
+    unit_price_paisa: Mapped[int] = mapped_column(BigInteger)
+    in_stock: Mapped[int] = mapped_column(Integer)
+
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now())
+
+    favourited_by: Mapped[list["User"]] = relationship(
+        secondary="user_favourites", # user_favorites is a table for joining, that entries the many-to-many relns betwn users and products
+        back_populates="favourites",
+        lazy="raise",
+    )
+    purchase_items: Mapped[list["PurchaseItem"]] = relationship(
+        back_populates="product",
+        lazy="raise",
+    )
+
+class UserFavourites(Base):
+    __tablename__ = "user_favourites"
+    __table_args__ = (
+        # a user should not be allowed to fav a product multiple times, using composite key directly
+        PrimaryKeyConstraint("user_id", "product_id", name="composite_key_user_id_product_id"),
+    )
+
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id", ondelete="RESTRICT"))
+    product_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("products.id", ondelete="RESTRICT"))
+
+
+class PurchaseItem(Base):
+    __tablename__ = "purchase_items"
+    __table_args__ = (
+        CheckConstraint("quantity > 0", name="quantity_positive"),
+        CheckConstraint("unit_price_paisa > 0", name="unit_price_positive"),
+
+        # a tx having same product more than one time is handled by "quantity", so tx_product_pair row should not duplicate in this table
+        PrimaryKeyConstraint("transaction_id", "product_id", name="composite_key_transaction_id_product_id"),
+    )
+
+    transaction_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("transactions.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    product_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("products.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    quantity: Mapped[int] = mapped_column(Integer)
+
+    # Snapshot the unit price at purchase time, in paisa
+    # NOTE: here, it doesnt reference to Product's unit price cuz, product's price can change later in future, but that should not
+    #    change current price with which the product is bought, otherwise ledger entries sum wont equal to zero
+    unit_price_paisa: Mapped[int] = mapped_column(BigInteger)
+
+    # each purchaseitem row can ve only one tx_id and one prouct_id, but the t
+    transaction: Mapped["Transaction"] = relationship(
+        back_populates="purchase_items",
+        lazy="raise",
+    )
+    product: Mapped["Product"] = relationship(
+        back_populates="purchase_items",
+        lazy="raise",
+    )
