@@ -118,3 +118,30 @@ class TransferResponse(BaseModel):
     transferred_rupees: Decimal
     sender_balance_rupees: Decimal
     recipient_balance_rupees: Decimal
+
+class PurchaseLineRequest(BaseModel):
+    product_id: int = Field(gt=0)
+    quantity: int = Field(gt=0, le=100)
+
+class PurchaseRequest(BaseModel):
+    items: list[PurchaseLineRequest] = Field(min_length=1, max_length=100)
+
+    @field_validator("items")
+    @classmethod
+    def each_product_can_appear_once(cls, items: list[PurchaseLineRequest]):
+        product_ids = [item.product_id for item in items]
+        if len(product_ids) != len(set(product_ids)): # the frontend should handle this thing, but its just safeguard here in backend
+            raise ValueError("Each product may appear only once; set its quantity instead.")
+        return items
+
+class PurchasedItemResponse(BaseModel):
+    product_id: int
+    quantity: int
+    unit_price_rupees: Decimal
+    line_total_rupees: Decimal
+
+class PurchaseResponse(BaseModel):
+    transaction_reference: str
+    total_rupees: Decimal
+    user_balance_rupees: Decimal
+    items: list[PurchasedItemResponse]
