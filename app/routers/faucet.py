@@ -13,7 +13,7 @@ import math
 
 router = APIRouter(prefix="/faucet", tags=["Faucet"])
 
-FAUCET_AMOUNT_PAISA = 1_000_000
+FAUCET_AMOUNT_PAISA = 5_000_000
 CLAIM_COOLDOWN = timedelta(hours=8)
 CLAIM_WINDOW = timedelta(hours=24)
 MAX_CLAIMS_PER_24_HOURS = 3
@@ -50,7 +50,7 @@ async def claim_faucet(
                 status="in_progress"
                 # dont insert the response_json and transaction_id yet, cuz the tx is still "in_progress"
             )
-            .on_conflict_do_nothing(constraint="key_user_pair") # if our key_user_pair constraint denies the insert, then idem_id will be None
+            .on_conflict_do_nothing(constraint="uq_key_user_pair") # if our uq_key_user_pair constraint denies the insert, then idem_id will be None
             .returning(models.IdempotencyKey.id)
         )
 
