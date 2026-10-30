@@ -1,4 +1,18 @@
-from sqlalchemy import String, BigInteger, TIMESTAMP, ForeignKey, func, Identity, CheckConstraint, Text, Index, UniqueConstraint, MetaData, text, Boolean
+from sqlalchemy import (
+    String,
+    BigInteger,
+    TIMESTAMP,
+    ForeignKey,
+    func,
+    Identity,
+    CheckConstraint,
+    Text,
+    Index,
+    UniqueConstraint,
+    MetaData,
+    text,
+    Boolean
+) 
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.dialects.postgresql import JSONB

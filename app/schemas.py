@@ -75,3 +75,8 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     id: str
+
+class FaucetResponse(BaseModel):
+    transaction_reference: str
+    credited_paisa: int
+    user_balance_paisa: int
