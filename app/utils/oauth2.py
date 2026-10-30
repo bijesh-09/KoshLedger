@@ -33,14 +33,11 @@ def verify_access_token(token: str, credentials_exception):
         id: str = token_payload.get("sub")
 
         if id is None:
-            print("id none")
             raise credentials_exception
         else:
             token_data = TokenData(id=id)
             return token_data
     except InvalidTokenError as e:
-        print("invalidtokenerror exception")
-        print(e.args)
         raise credentials_exception from e
 
 
@@ -68,7 +65,6 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], sessio
         )
 
     if user is None:
-        print("user none in getcurrentuser")
         raise credentials_exception
     
     return user 

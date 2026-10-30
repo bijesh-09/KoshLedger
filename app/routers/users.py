@@ -8,7 +8,7 @@ from app.utils.oauth2 import get_current_active_user
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
-@router.get("/", status_code=status.HTTP_200_OK, response_model=list[schemas.GetActiveUsers], tags=["Get active users"]) # we are returning list of user objects
+@router.get("", status_code=status.HTTP_200_OK, response_model=list[schemas.GetActiveUsers], tags=["Get active users"]) # we are returning list of user objects
 async def get_active_users(
         session: Annotated[AsyncSession, Depends(get_async_db)],
         current_user: Annotated[models.User, Depends(get_current_active_user)] ,

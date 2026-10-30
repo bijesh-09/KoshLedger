@@ -35,7 +35,7 @@ async def register(payload: schemas.UserBase, session: AsyncSession = Depends(ge
         )
 
     # hashing the password
-    payload.password = hash_pwd(password=payload.password)
+    payload.password = await hash_pwd(password=payload.password) 
     
     new_user = models.User(**payload.model_dump())
     new_wallet = models.Wallet() # default kind is "user"
@@ -108,7 +108,7 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
         )
     
     # Verify the password   
-    if not verify_pwd(form_data.password, user.password):
+    if not  await verify_pwd(form_data.password, user.password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
     else:
         access_token = oauth2.create_access_token(data={"sub": str(user.id)}) # token sends everything in a literal str so typecast int id to str

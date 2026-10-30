@@ -1,6 +1,7 @@
 import hashlib, httpx
 from pwdlib import PasswordHash
 from pwdlib.exceptions import UnknownHashError
+import asyncio
 
 class PasswordCheckUnavailable(Exception):
     """HIBP could not be reached or returned an invalid response."""
@@ -40,11 +41,24 @@ async def is_password_compromised(password: str) -> bool:
 
 password_hash = PasswordHash.recommended() # currently the recommended hashing algo is argon2
 
-def hash_pwd(password: str):
-    return password_hash.hash(password=password)
+async def hash_pwd(password: str): # hash_pwd runs in another thread, since hashing password takes a lot of time
+ 
+    # return await asyncio.to_thread(
+    #     password_hash.hash(password=password)  #VVI NOTE: .hash() runs here, on the event-loop thread and blocks the whole eventloop thread, then
+                                                    #   to_thread receives the resulting hash string and tries to call that string as a function.
+    # )
 
-def verify_pwd(plain_pwd, hashed_pwd):
+    return await asyncio.to_thread(
+        password_hash.hash, # so pass the fn reference
+        password=password # and pass the parameters of that blocking sync fn to the working thread
+    )
+
+async def verify_pwd(plain_pwd, hashed_pwd):
     try:
-        return password_hash.verify(plain_pwd, hashed_pwd)
+        return await asyncio.to_thread(
+            password_hash.verify,
+            password=plain_pwd,
+            hash=hashed_pwd
+        ) 
     except UnknownHashError:
         return False
