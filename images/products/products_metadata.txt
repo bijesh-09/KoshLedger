@@ -1,0 +1,107 @@
+Image Name: Suede_Harrington_Jacket
+Image Title: Classic Brown Suede Harrington Jacket
+Image Description: A professional product flat-lay or manikin shot displaying a dark, coffee-brown suede leather jacket in the Harrington or bomber style. The image highlights the tailored construction, stand-up mandarin-style collar with button tabs, and clean central zipper. The ribbed, elasticated cuffs and hem are clearly visible, contrasting slightly with the suede texture. The jacket is presented on a minimalist, off-white background with professional studio lighting.Unit Price (NPR): 18,999.00
+Unit Price (Paisa): 1,899,900
+In_Stock: 7
+
+Image Name: Indigo_Straight-Leg_Jeans
+Image Title: Dark Indigo Denim Straight-Leg Jeans
+Image Description: A clean, flat-lay product shot of a pair of men's premium dark indigo-wash denim jeans. They have a classic straight-leg cut. The jeans are neatly buttoned and smooth, showcasing the uniform dark color with subtle whiskering at the hips and clean contrast orange/gold stitching. The image is a vertical shot against a pure white background, designed to focus on the fabric texture and shape.Unit Price (NPR): 6,499.00
+Unit Price (Paisa): 649,900
+In_Stock: 45
+
+Image Name: Light_Blue_Polo_Shirt
+Image Title: Light Blue Short-Sleeve Knit Polo Shirt
+Image Description: A clear product photograph of a men's light, sky-blue short-sleeve polo shirt. It is made from a classic cotton piqué knit, which adds subtle texture. The shirt has a neat collar with a two-button placket. The image shows the smooth lay of the fabric and the tailored fit against a plain white studio background.Unit Price (NPR): 3,299.50
+Unit Price (Paisa): 329,950
+In_Stock: 60
+
+Image Name: Suede_Loafers
+Image Title: Brown Suede Penny Loafers
+Image Description: A close-up product shot, slightly angled to show side-profile, of a pair of men's dark brown suede loafers. They feature the traditional penny strap across the vamp and classic moccasin stitching on the toe. The image highlights the rich, soft suede texture and the low-profile rubber and leather sole, set on a minimal, light-colored wooden surface against a blurred white background.Unit Price (NPR): 8,999.00
+Unit Price (Paisa): 899,900
+In_Stock: 35
+
+Image Name: Suede_Chukka_Boots
+Image Title: Men's Brown Suede Chukka Boots
+Image Description: A detailed studio photograph of a pair of dark brown suede Chukka or desert boots. The boots are shown in a natural side-profile view, highlighting the two-eyelet lace-up structure and simple silhouette. The soft texture of the suede leather and the contrast crepe sole or subtle stacked leather sole are clearly defined. The boots are presented against a seamless, matte grey background.Unit Price (NPR): 9,499.00
+Unit Price (Paisa): 949,900
+In_Stock: 25
+
+Image Name: White_Leather_Sneakers
+Image Title: Minimalist White Leather Low-Top Sneakers
+Image Description: A minimalist product shot of a pair of clean, bright white leather low-top sneakers. They have a sleek design with matching white laces and flat white rubber soles. The lighting is bright and even, emphasizing the smooth leather texture and the spotless condition. The image is a three-quarter angle view on a pure white surface, designed to make the shoes stand out.Unit Price (NPR): 5,999.50
+Unit Price (Paisa): 599,950
+In_Stock: 55
+
+Image Name: Round_Tortoiseshell_Sunglasses
+Image Title: Retro-Style Round Tortoiseshell Sunglasses
+Image Description: A detailed product shot of retro-inspired, round-framed sunglasses with a rich tortoiseshell pattern and gold-tone metal nose bridge and temple tips. The dark lenses are visible within the acetate frames. The glasses are presented lying flat on a minimalist grey surface, with professional lighting creating a slight catchlight on the lenses and polishing on the frames.Unit Price (NPR): 2,499.00
+Unit Price (Paisa): 249,900
+In_Stock: 100
+
+Image Name: Brown_Leather_Belt
+Image Title: Dark Brown Tumbled Leather Belt with Silver Buckle
+Image Description: A product photograph of a rolled-up men's dark brown leather belt. It features a slightly tumbled or textured finish and a classic, square-frame silver-tone metal buckle. The image is taken from a three-quarter angle, showing the thickness of the leather and the shine of the metal against a clean white or light grey background.Unit Price (NPR): 1,999.00
+Unit Price (Paisa): 199,900
+In_Stock: 100
+
+Image Name: Sling_Bag
+Image Title: Men's Navy Blue Sling Bag with White Straps
+Image Description: A functional product shot of a small, navy blue fabric sling or cross-body bag. It has a durable nylon/canvas body, contrast white zipper pulls, and a white adjustable strap with silver hardware. The image shows the bag in an upright position, emphasizing its compact shape and organizational pockets against a minimalist background.Unit Price (NPR): 2,899.50
+Unit Price (Paisa): 289,950
+In_Stock: 15
+
+Image Name: Silver_Analog_Watch
+Image Title: Stainless Steel Silver Analog Wrist Watch with Mesh Band
+Image Description: A high-quality product macro shot of a men's silver stainless steel analog wrist watch. It features a simple silver dial with clean indices, matching hands, and a subtle date window. The prominent detail is the sophisticated stainless steel mesh (Milanese) watch band. The watch is presented face-forward on a blurred dark wooden surface under focused studio lighting.Unit Price (NPR): 12,499.00
+Unit Price (Paisa): 1,249,900
+In_Stock: 100
+
+Image Name: Bi-fold_Wallet
+Image Title: Folded Dark Brown Leather Bi-fold Wallet
+Image Description: A clean product photograph of a dark brown, polished leather bi-fold wallet, presented in its folded state. The rich, slightly grained texture of the leather is prominent, along with minimal stitching. The wallet is lying flat on a minimalist grey background, emphasizing its slim, classic design.Unit Price (NPR): 2,199.00
+Unit Price (Paisa): 219,900
+In_Stock: 80
+
+Image Name: Socks_Light_Blue
+Image Title: Pair of Light Blue Crew Dress Socks
+Image Description: A product flat-lay shot of a neatly folded pair of fine-ribbed cotton crew socks in a crisp, light blue color. The image shows the top cuff, heel, and toe structure, emphasizing the soft knit texture. The socks are presented on a pure white background for clarity.Unit Price (NPR): 499.50
+Unit Price (Paisa): 49,950
+In_Stock: 100
+
+Image Name: Socks_Navy
+Image Title: Pair of Navy Blue Ribbed Dress Socks
+Image Description: A clean product shot of a pair of dark navy blue crew socks. The socks are neatly rolled and folded to display the classic ribbed texture and fine knit, set against a smooth white or off-white background. The deep navy color is consistent and well-lit.Unit Price (NPR): 499.50
+Unit Price (Paisa): 49,950
+In_Stock: 100
+
+Image Name: Womens_Moto-Style_Suede_Jacket
+Image Title: Women’s Moto-Style Suede Jacket
+Image Description: A tailored, moto-style jacket in rich brown suede, offering a feminine take on the classic bomber texture. Features an asymmetrical zip and vertical zip pockets.Unit Price (NPR): 16,999.00
+Unit Price (Paisa): 1,699,900
+In_Stock: 10
+
+Image Name: Womens_Ribbed_Knit_Polo_Sweater
+Image Title: Women’s Ribbed Knit Polo Sweater
+Image Description: A soft, fine-ribbed knit polo sweater in a sophisticated light blue-grey. Features a refined silhouette and a neat three-button placket, mirroring the clean lines of a classic polo in a more elegant form.Unit Price (NPR): 3,999.50
+Unit Price (Paisa): 399,950
+In_Stock: 30
+
+Image Name: Womens_High-Rise_Straight_Jeans
+Image Title: Women's High-Rise Straight Jeans
+Image Description: A classic pair of high-rise, straight-leg jeans in a premium indigo wash. They are clean-cut and minimalist, balancing the refined top layers of the outfit.Unit Price (NPR): 5,999.00
+Unit Price (Paisa): 599,900
+In_Stock: 40
+
+Image Name: Nepali_Gunyou_Cholo_Set
+Image Title: Nepali Gunyou Cholo Set
+Image Description: A traditional women's Gunyou Cholo outfit from Nepal. It features a deep red velvet blouse (cholo) with golden embroidery, and a patterned cotton sari (gunyou) predominantly in deep greens and reds, complete with a traditional patterned waistband (patuka).Unit Price (NPR): 14,499.50
+Unit Price (Paisa): 1,449,950
+In_Stock: 5
+
+Image Name: Nepali_Daura_Suruwal_with_Dhaka_Topi
+Image Title: Nepali Daura Suruwal with Dhaka Topi
+Image Description: A traditional men’s Nepali outfit, consisting of a cream-colored cotton daura (an upper garment fastened with ties) and matching loose suruwal (trousers). The set is complemented by a navy blue waistcoat and a traditionally patterned grey and black Dhaka topi (cap).Unit Price (NPR): 15,999.00
+Unit Price (Paisa): 1,599,900
+In_Stock: 5
