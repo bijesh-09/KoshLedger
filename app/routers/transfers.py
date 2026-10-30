@@ -40,7 +40,7 @@ async def transfer(
                 request_hash=request_hash,
                 status="in_progress",
             )
-            .on_conflict_do_nothing(constraint="key_user_pair")
+            .on_conflict_do_nothing(constraint="uq_key_user_pair")
             .returning(models.IdempotencyKey.id)
         )
 
