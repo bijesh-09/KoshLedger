@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import check_db_conn, engine
 
-from app.routers import auth, faucet, purchases, transfers, users
+from app.routers import auth, faucet, purchases, transfers, users, products
 
 async def lifespan(app: FastAPI):
      # Runs once when this server process starts
@@ -84,3 +84,4 @@ app.include_router(users.router)
 app.include_router(faucet.router)
 app.include_router(purchases.router)
 app.include_router(transfers.router)
+app.include_router(products.router)
