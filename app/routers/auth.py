@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
@@ -9,7 +9,8 @@ from app.utils import oauth2
 from app import schemas, models
 from app.utils.passwords import PasswordCheckUnavailable, is_password_compromised, hash_pwd, verify_pwd
 from typing import Annotated
-from datetime import timedelta, datetime, timezone
+from datetime import timedelta
+import math
 
 
 router = APIRouter(prefix="/auth")
@@ -87,30 +88,25 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User with username: {form_data.username} not found")
 
-    if user.deleted_at is not None:
+    # Verify the password
+    if not  await verify_pwd(form_data.password, user.password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
+
+    now = await session.scalar(select(func.clock_timestamp())) 
+    
+    if user.deleted_at is not None: 
+
         recovery_deadline = user.deleted_at + timedelta(days=30)
 
-        if datetime.now(timezone.utc) > recovery_deadline:
+        if now > recovery_deadline:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="The account recovery period has expired.",
             )
+        
+        # This token can reach the /users/me/recovery and /users/me/activate endpoint with the help of get_current_user;
+        #    get_current_active_user still blocks normal account use for recovery and activate endpoint.
 
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This account is pending deletion. Recover it within 30 days.",
-        )
-
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="This account is currently deactivated.",
-        )
-    
-    # Verify the password   
-    if not  await verify_pwd(form_data.password, user.password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect password")
-    else:
-        access_token = oauth2.create_access_token(data={"sub": str(user.id)}) # token sends everything in a literal str so typecast int id to str
+    access_token = oauth2.create_access_token(data={"sub": str(user.id)}) # token sends everything in a literal str so typecast int id to str
 
     return schemas.Token(access_token=access_token, token_type="bearer")

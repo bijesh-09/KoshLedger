@@ -7,10 +7,11 @@ from app.database import get_async_db
 from fastapi import Depends, status, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from app.config import settings
 from typing import Annotated
+import math
 
 def create_access_token(data: dict):
     to_encode = data.copy()
@@ -41,7 +42,7 @@ def verify_access_token(token: str, credentials_exception):
         raise credentials_exception from e
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login") # extracts token from the login req body
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login") # extracts token from the login req authorization headers
 
 async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], session: AsyncSession = Depends(get_async_db)):
 
@@ -61,7 +62,6 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], sessio
     user = await session.scalar(
             select(models.User)
             .where(models.User.id == user_id)
-            .options(selectinload(models.User.wallet))
         )
 
     if user is None:
@@ -69,9 +69,43 @@ async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)], sessio
     
     return user 
 
-async def get_current_active_user(current_user: Annotated[models.User, Depends(get_current_user)]):
-    if current_user.deleted_at:
-            raise HTTPException(status_code=403, detail="The user no longer exist!")
+async def get_current_active_user(
+    current_user: Annotated[models.User, Depends(get_current_user)],
+    session: Annotated[AsyncSession, Depends(get_async_db)],
+
+):
+    now = await session.scalar(select(func.clock_timestamp())) 
+        
+    if current_user.deleted_at is not None: # if its true then, its sure that the user is in pending deletion, cuz /login already filters recovery expired users
+
+        recovery_deadline = current_user.deleted_at + timedelta(days=30)
+        remaining = recovery_deadline - now
+
+        if remaining.total_seconds() <= 0: # handling edge case where remaining time can be less than the TOKEN_EXPIRATION_TIME
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="The account recovery period has expired.",
+            )
+
+        if remaining.total_seconds() < 86_400:
+            total = int(remaining.total_seconds())
+            hours, rem = divmod(total, 3600)
+            minutes, seconds = divmod(rem, 60)
+            time_left = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Account in pending deletion phase. Can be recovered within {time_left}.",
+            )
+        else:
+            remaining_days = math.ceil(remaining.total_seconds() / 86_400)
+
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Account in pending deletion phase. Can be recovered wihtin {remaining_days} days.",
+            )
+            
+
     if not current_user.is_active:
-            raise HTTPException(status_code=403, detail="Inactive user!")
+            raise HTTPException(status_code=403, detail="Account currently deactivated by user!")
+    
     return current_user
