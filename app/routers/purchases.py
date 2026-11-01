@@ -109,7 +109,7 @@ async def purchase(
         if total_paisa > MAX_BIGINT:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-                detail="The total purchase amount exceeds the supported limit.",
+                detail="The total purchase amount exceeds the purchase capacity.",
             )
 
         wallet_results = await session.scalars(

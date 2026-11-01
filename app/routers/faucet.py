@@ -17,6 +17,8 @@ FAUCET_AMOUNT_PAISA = 5_000_000
 CLAIM_COOLDOWN = timedelta(hours=8)
 CLAIM_WINDOW = timedelta(hours=24)
 MAX_CLAIMS_PER_24_HOURS = 3
+MAX_BIGINT = 9_223_372_036_854_775_807 # for postgres
+MIN_BIGINT = -9_223_372_036_854_775_808  # -(MAX_BIGINT + 1)
 
 @router.post(
     "",
@@ -30,7 +32,7 @@ async def claim_faucet(
     # fastapi will look for "Idempotency-Key" in the req header and assign it to our var
 ):
 
-    # NOTE: ALL THE LOCKS ACQUIRED IN FOLLOWING CODE WONT BE RELEASED UNTIL THE TX ENDS 
+    # NOTE: ALL THE LOCKS ACQUIRED IN FOLLOWING CODE WONT BE RELEASED UNTIL THE TX ENDS qq
     
     # create a stable fingerprint for fixed operation
     # since faucet would need body, so hashing with help of amount
@@ -129,7 +131,20 @@ async def claim_faucet(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Service is unavailable! The current user does not exist "
             )
-        
+
+
+        if (MAX_BIGINT - user_wallet.balance_paisa) < FAUCET_AMOUNT_PAISA :
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="The faucet amount exceeds the supported capacity of user's wallet.",
+            )
+
+        if treasury_wallet.balance_paisa - FAUCET_AMOUNT_PAISA < MIN_BIGINT:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="The faucet amount depletes the supported capacity of treasury's wallet.",
+            )
+
         # Enforce the cooldown and rolling 24-hour limit
 
         # After acquiring the locks, get the database clock:
@@ -192,7 +207,7 @@ async def claim_faucet(
             reference=reference,
             type="faucet",
             user_id=current_user.id,
-            description="Faucet airdropped to user successfully!"
+            description=f"Faucet airdropped to user: {current_user.username} successfully!"
         )
 
         treasury_wallet.balance_paisa -= FAUCET_AMOUNT_PAISA # remove fixed amount paisa from treasury

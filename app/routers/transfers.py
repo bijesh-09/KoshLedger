@@ -12,6 +12,7 @@ from app.utils.oauth2 import get_current_active_user
 
 router = APIRouter(prefix="/transfers", tags=["Transfers"])
 
+MAX_BIGINT = 9_223_372_036_854_775_807
 
 @router.post(
     "",
@@ -26,6 +27,12 @@ async def transfer(
         str, Header(alias="Idempotency-Key", min_length=1, max_length=128)
     ],
 ):
+    if payload.amount_paisa > 5000000:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot transfer more than Rs 50,000 at a time.",
+        )
+
     request_hash = sha256(
         f"transfer:v1:{payload.recipient_username}:{payload.amount_paisa}".encode("utf-8")
     ).hexdigest()
@@ -119,7 +126,13 @@ async def transfer(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Recipient's wallet not found",
             )
-        
+
+        if (MAX_BIGINT - recipient_wallet.balance_paisa) < payload.amount_paisa :
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="The transfer amount exceeds the supported capacity of reciever's wallet.",
+            )
+
         # Restrict both sides to normal user wallets; system wallets can never participate.
         if (sender_wallet.kind != "user") or (recipient_wallet.kind != "user"): 
             raise HTTPException(
@@ -141,7 +154,7 @@ async def transfer(
             reference=str(uuid4()),
             type="transfer",
             user_id=current_user.id,
-            description=f"Transfer to {recipient.username}",
+            description=f"Transfer to user: {recipient.username}",
         )
         session.add(tx)
         await session.flush() # flush to get the returned tx.id
@@ -183,3 +196,4 @@ async def transfer(
     except Exception:
         await session.rollback()
         raise
+ 
