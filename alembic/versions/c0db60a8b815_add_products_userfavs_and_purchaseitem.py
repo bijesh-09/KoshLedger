@@ -56,6 +56,62 @@ def upgrade() -> None:
     op.drop_index(op.f('ix_wallets_user_id'), table_name='wallets')
     op.create_index(op.f('ix_wallets_user_id'), 'wallets', ['user_id'], unique=True)
 
+    # mmaking ledger_entries immutable for operations like UPDATE and DELETE
+    op.execute("""
+    CREATE OR REPLACE FUNCTION reject_ledger_entry_mutation()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+        RAISE EXCEPTION
+            'ledger_entries are immutable; add compensating entries instead';
+    END;
+    $$;
+    """)
+
+    op.execute("""
+        CREATE TRIGGER prevent_ledger_entry_mutation
+        BEFORE UPDATE OR DELETE ON ledger_entries
+        FOR EACH ROW
+        EXECUTE FUNCTION reject_ledger_entry_mutation();
+    """)
+
+
+    # set the trigger for ledger entries' amount sum to zero for the rows affected by current tx on each commit
+    # Function: sums all entries of the transaction whose row was just inserted or updated.
+    op.execute("""
+        CREATE OR REPLACE FUNCTION check_ledger_transaction_balanced()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        DECLARE
+            total BIGINT;
+        BEGIN
+            SELECT COALESCE(SUM(amount_paisa), 0)
+              INTO total
+              FROM ledger_entries
+             WHERE transaction_id = NEW.transaction_id;
+
+            IF total <> 0 THEN
+                RAISE EXCEPTION 'ledger entries for transaction % sum to %, expected 0',
+                    NEW.transaction_id, total;
+            END IF;
+
+            RETURN NULL;
+        END;
+        $$;
+    """)
+
+    # Deferred constraint trigger: the check runs at COMMIT, not after each row,
+    # so the two entries of a transfer can be inserted one after another.
+    op.execute("""
+        CREATE CONSTRAINT TRIGGER ck_ledger_entries_balanced
+        AFTER INSERT ON ledger_entries
+        DEFERRABLE INITIALLY DEFERRED
+        FOR EACH ROW
+        EXECUTE FUNCTION check_ledger_transaction_balanced();
+    """)
+
     # Seed the catalog from the product image metadata. Image filenames include extensions;
     # monetary values are stored as integer paisa.
     products = sa.table(
@@ -207,3 +263,11 @@ def downgrade() -> None:
     op.drop_table('user_favourites')
     op.drop_table('products')
     # ### end Alembic commands ###
+    op.execute("DROP TRIGGER IF EXISTS ck_ledger_entries_balanced ON ledger_entries;")
+    op.execute("DROP FUNCTION IF EXISTS check_ledger_transaction_balanced();")
+    op.execute("""
+    DROP TRIGGER IF EXISTS prevent_ledger_entry_mutation ON ledger_entries;
+    """)
+    op.execute("""
+        DROP FUNCTION IF EXISTS reject_ledger_entry_mutation();
+    """)
