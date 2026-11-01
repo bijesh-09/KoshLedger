@@ -31,6 +31,7 @@ async def check_db_conn():
         print("Database authentication and connection test succeeded!")
     except Exception as e:
         print(f"CRITICAL: Failed to connect or authenticate with PostgreSQL: {e}")
+        raise
 
 
 async def get_async_db():
