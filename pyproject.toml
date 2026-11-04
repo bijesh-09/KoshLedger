@@ -1,0 +1,9 @@
+# the file name has to be exactly pyproject.toml or pytest.ini
+# pyproject.toml is shared by many other tools, while pytest.ini is explicitly for pytest only
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto" # auto lets async def test_* fns run as async tests without need to decorate each test fn with @pytest.mark.asyncio
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"] # the "tests" dirname here is considered relative to this toml file's path, testpaths is optional but narrows down the search of dir for pytest
+addopts = "--disable-warnings" # set of flags we want to use when running pytest
