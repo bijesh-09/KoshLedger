@@ -8,6 +8,8 @@ from app.main import app
 from app.database import get_async_db
 from httpx import ASGITransport, AsyncClient
 from collections.abc import AsyncIterator #  AsyncIterator[T] means: this is an async generator fixture that yields a T once; consumers receive T, not the iterator.
+from app import models
+from app.utils.passwords import hash_pwd
 
 db_pass = settings.database_password
 db_user = settings.database_username
@@ -70,7 +72,7 @@ async def session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessio
 
 
 @pytest_asyncio.fixture(scope="session")
-async def seeded_state(session_factory: async_sessionmaker[AsyncSession]) -> dict[str, dict[int, int]]:
+async def seeded_state(session_factory: async_sessionmaker[AsyncSession]) -> dict[str, dict[int, int] | dict[int, tuple[int, int] ]]:
 
     async with session_factory() as session:
         async with session.begin(): # fetch seeded state from db in a single tx
@@ -79,12 +81,12 @@ async def seeded_state(session_factory: async_sessionmaker[AsyncSession]) -> dic
             )).all() # since .all() works in the result returned by the execute() not in the execute() itself
 
             products = (await session.execute(
-                text("SELECT id, in_stock FROM products")
+                text("SELECT id, unit_price_paisa, in_stock FROM products")
             )).all() 
 
     return {
         "wallets": {w.id: w.balance_paisa for w in wallets},
-        "products": {p.id: p.in_stock for p in products}
+        "products": {p.id: (p.unit_price_paisa, p.in_stock) for p in products}
     }
 
 
@@ -94,6 +96,7 @@ async def seeded_state(session_factory: async_sessionmaker[AsyncSession]) -> dic
 #    data will be lost, and we cant afford downgrading and upgrading migrations per test since its slow and CPU costly. So following soln is applied:
 # Our seeded, shared rows that tests mutate are:
 # - wallets for treasury and merchant (balances change on faucet/purchase),
+# - products.unit_price_paisa (changes when price mutated intentionally on purchase).
 # - products.in_stock (changes on purchase).
 # And our seeded data are:
 # - treasury and merchant in wallets and users table
@@ -105,11 +108,11 @@ async def seeded_state(session_factory: async_sessionmaker[AsyncSession]) -> dic
 @pytest_asyncio.fixture
 async def clean_db(
     session_factory: async_sessionmaker[AsyncSession],
-    seeded_state: dict[str, dict[int, int]]
+    seeded_state: dict[str, dict[int, int] | dict[int, (int, int)]]
 ):
     
     yield # clean_db pauses here when client calls it, and runs remaining code when client is teardown
-
+    
     async with session_factory() as session:
         async with session.begin(): # restore the db as single tx
             await session.execute(
@@ -134,10 +137,10 @@ async def clean_db(
                     {"b": balance, "i": wallet_id}
                 )
 
-            for product_id, in_stock in seeded_state["products"].items():
+            for product_id, (price, stock) in seeded_state["products"].items():
                 await session.execute(
-                    text("UPDATE products SET in_stock = :s WHERE id = :i"),
-                    {"s": in_stock, "i": product_id}
+                    text("UPDATE products SET unit_price_paisa = :p, in_stock = :s WHERE id = :i"),
+                    { "p": price, "s": stock, "i": product_id }
                 )
 
 
@@ -160,7 +163,11 @@ async def override_db(session_factory: async_sessionmaker[AsyncSession]):
 
 # make client function scoped so that each test gets independent client, but loop_scope remains session as default
 @pytest_asyncio.fixture
-async def client(session_factory: async_sessionmaker[AsyncSession], clean_db, override_db: AsyncSession):
+async def client(
+    session_factory: async_sessionmaker[AsyncSession],
+    clean_db, 
+    override_db: AsyncSession
+) -> AsyncIterator[AsyncClient]:
                 
     #NOTE: ASGITransport doesnt emits lifespan by default, so our check_conn_db() the precode in app.main wont run, which is what we want,
                 # if u want lifespan anyway then use LifespanManager
@@ -169,4 +176,59 @@ async def client(session_factory: async_sessionmaker[AsyncSession], clean_db, ov
         base_url="http://test" # dummy url since the app runs directly in process
     ) as client:
         yield client
+
+"""------------------------------------------------------------------------------------------------------------------------------------------------------"""
+
+# creates user with wallet as default
+@pytest_asyncio.fixture
+async def make_user(
+    session_factory: async_sessionmaker[AsyncSession],
+):
+    async def _make_user(username: str) -> dict[str, str | id]:
+
+        email = f"{username}@example.com"
+        hashed_pass =  await hash_pwd("Str0ng!Pass")
+
+        async with session_factory() as session:
+            async with session.begin():
+                user = models.User(
+                    username=username,
+                    email=email,
+                    password=hashed_pass
+                )
+                wallet = models.Wallet()
+                session.add(user) 
+                session.add(wallet)
+                user.wallet = wallet 
+
+        return {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "password": "Str0ng!Pass"
+        }
+    return _make_user
+
+@pytest_asyncio.fixture
+async def make_auth(
+    client: AsyncClient,
+    make_user: dict[str, str | id],
+):  
+    async def _make_auth(username: str):
+
+        user = await make_user(username)
+
+        res = await client.post("/auth/login", 
+                        data= {
+                            "username": user["username"],
+                            "password": user["password"]
+                        })   
+
+        token_headers = {"Authorization": f"Bearer {res.json()["access_token"]}"}
+
+        return token_headers, user # returning tuple
+
+    return _make_auth # return fn reference cuz we need to use fixture as fn call
+
+"""------------------------------------------------------------------------------------------------------------------------------------------------------"""
 
