@@ -8,10 +8,17 @@ import pytest_asyncio, pytest
 from tests.helpers import (
     user_balance, stock_of, new_key,
     purchase_count, ledger_sum_of_buyer,
-    post_purchase, idempotency_rows
+    post_purchase, idempotency_rows,
+    purchase_hash
 )
+from app.routers.purchases import MAX_BIGINT
+import app.routers.purchases as purchases_router
 
+
+# ------------------------------
 """/purchases SPECIFIC FIXTURES"""
+# ------------------------------
+
 @pytest_asyncio.fixture
 async def fund(session_factory: async_sessionmaker[AsyncSession]):
     """Credit a user wallet with a balanced transaction (keeps the ledger honest)."""
@@ -88,7 +95,6 @@ async def get_products(session_factory: async_sessionmaker[AsyncSession]):
 @pytest_asyncio.fixture
 async def set_product(session_factory: async_sessionmaker[AsyncSession]):
     """Temporarily change a test's seeded product's price and stock; restore it after the test."""
-    original: dict[int, tuple[int, int]] = {}
 
     async def _set_product(
         *,
@@ -109,10 +115,6 @@ async def set_product(session_factory: async_sessionmaker[AsyncSession]):
 
                 assert product is not None, "seed data missing: no products"
 
-                original.setdefault(
-                    product.id, (product.unit_price_paisa, product.in_stock)
-                )
-
                 if unit_price_paisa is not None:
                     product.unit_price_paisa = unit_price_paisa
                 if in_stock is not None:
@@ -127,6 +129,10 @@ async def set_product(session_factory: async_sessionmaker[AsyncSession]):
     return _set_product
 
 
+
+# ------------------------------
+"""MAIN PRIORITY TESTS"""
+# ------------------------------
 
 """HAPPY PATH TESTS"""
 async def test_purchase_happy_path_updates_balance_stock_and_ledger(
@@ -276,6 +282,207 @@ async def test_same_key_different_body_is_rejected(
     assert await stock_of(session_factory, product["id"]) == 9
     assert await purchase_count(session_factory, user["id"]) == 1
 
+async def test_item_order_does_not_change_the_hash(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    fund,
+    get_products,
+    set_product,
+):
+    seeded = await get_products(2)
+    first_product = await set_product(
+        product_id=seeded[0]["id"], unit_price_paisa=10_000, in_stock=10
+    )
+    second_product = await set_product(
+        product_id=seeded[1]["id"], unit_price_paisa=20_000, in_stock=10
+    )
+    headers, user = await make_auth("shopper")
+    await fund(user["id"], 100_000)
+    key = new_key()
+
+    first = await post_purchase(
+        client,
+        headers,
+        [(first_product["id"], 1), (second_product["id"], 2)],
+        key=key,
+    )
+    second = await post_purchase(
+        client,
+        headers,
+        [(second_product["id"], 2), (first_product["id"], 1)],
+        key=key,
+    )
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert second.json() == first.json()
+    assert await purchase_count(session_factory, user["id"]) == 1
+
+async def test_in_progress_key_returns_409(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    fund,
+    set_product,
+):
+    product = await set_product(unit_price_paisa=40_000, in_stock=10)
+    headers, user = await make_auth("shopper")
+    await fund(user["id"], 100_000)
+    key = new_key()
+    items = [(product["id"], 1)]
+
+    async with session_factory() as session:
+        async with session.begin():
+            session.add(
+                models.IdempotencyKey(
+                    user_id=user["id"],
+                    key=key,
+                    request_hash= await purchase_hash(items),
+                    status="in_progress",
+                )
+            )
+
+    response = await post_purchase(client, headers, items, key=key)
+
+    assert response.status_code == 409, response.text
+    assert "being processed" in response.json()["detail"].lower()
+    assert await user_balance(session_factory, user["id"]) == 100_000
+    assert await stock_of(session_factory, product["id"]) == 10
+    assert await purchase_count(session_factory, user["id"]) == 0
+
+async def test_failed_purchase_does_not_burn_the_key(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    fund,
+    set_product,
+):
+    product = await set_product(unit_price_paisa=40_000, in_stock=10)
+    headers, user = await make_auth("shopper")  # zero balance on purpose
+    key = new_key()
+    items = [(product["id"], 1)]
+
+    failed = await post_purchase(client, headers, items, key=key)
+    assert failed.status_code == 409, failed.text
+    assert await idempotency_rows(session_factory, user["id"], key) == 0
+    
+    await fund(user["id"], 40_000)
+
+    retried = await post_purchase(client, headers, items, key=key)
+    assert retried.status_code == 201, retried.text
+    assert await user_balance(session_factory, user["id"]) == 0
+    assert await purchase_count(session_factory, user["id"]) == 1
+
+async def test_different_keys_same_body_are_separate_purchases(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    fund,
+    set_product,
+):
+    product = await set_product(unit_price_paisa=40_000, in_stock=10)
+    headers, user = await make_auth("shopper")
+    await fund(user["id"], 100_000)
+
+    first = await post_purchase(client, headers, [(product["id"], 1)])
+    second = await post_purchase(client, headers, [(product["id"], 1)])
+
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert (
+        first.json()["transaction_reference"]
+        != second.json()["transaction_reference"]
+    )
+
+    assert await user_balance(session_factory, user["id"]) == 20_000
+    assert await stock_of(session_factory, product["id"]) == 8
+    assert await purchase_count(session_factory, user["id"]) == 2
+
+
+
+"""ATOMICITY TEST"""
+async def test_error_after_mutations_rolls_back_everything(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    fund,
+    set_product,
+    monkeypatch,
+):
+    product = await set_product(unit_price_paisa=40_000, in_stock=10)
+    headers, user = await make_auth("shopper")
+    await fund(user["id"], 100_000)
+    key = new_key()
+    items = [(product["id"], 1)]
+
+    
+    def explode(*args, **kwargs):
+        raise RuntimeError("forced failure before commit")
+
+    # the idempotency table is updated only after following happens: 
+    #   - wallet/stock mutations
+    #   - transactions INSERT
+    #   - purchase_items + ledger_entries staged
+    # so update() in the router and runs only after these above are done
+    monkeypatch.setattr(purchases_router, "update", explode) 
+
+    with pytest.raises(RuntimeError):
+        await post_purchase(client, headers, items, key=key)
+
+    # Nothing committed: no balance change, no stock change, no tx, no key.
+    assert await user_balance(session_factory, user["id"]) == 100_000
+    assert await stock_of(session_factory, product["id"]) == 10
+    assert await purchase_count(session_factory, user["id"]) == 0
+    assert await idempotency_rows(session_factory, user["id"], key) == 0
+    assert await ledger_sum_of_buyer(session_factory, user["id"]) == 100_000  # funding only
+
+    # The in-progress row was rolled back, so the same key works now.
+    monkeypatch.undo()
+
+    retried = await post_purchase(client, headers, items, key=key)
+    assert retried.status_code == 201, retried.text
+    assert await user_balance(session_factory, user["id"]) == 60_000
+
+
+
+"""LEDGER INTEGRITY TEST"""
+async def test_price_change_does_not_rewrite_history(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    fund,
+    set_product,
+):
+    product = await set_product(unit_price_paisa=30_000, in_stock=10)
+    headers, user = await make_auth("shopper")
+    await fund(user["id"], 100_000)
+
+    response = await post_purchase(client, headers, [(product["id"], 1)])
+    assert response.status_code == 201, response.text
+    reference = response.json()["transaction_reference"]
+
+    # Change the catalog price after the purchase.
+    await set_product(product_id=product["id"], unit_price_paisa=99_000)
+
+    async with session_factory() as session:
+        tx_id = await session.scalar(
+            select(models.Transaction.id).where(
+                models.Transaction.reference == reference
+            )
+        )
+        item = await session.scalar(
+            select(models.PurchaseItem).where(
+                models.PurchaseItem.transaction_id == tx_id
+            )
+        )
+
+    assert item is not None
+    assert item.unit_price_paisa == 30_000  # historical snapshot
+    assert await user_balance(session_factory, user["id"]) == 70_000
+    assert await ledger_sum_of_buyer(session_factory, user["id"]) == 70_000
+
+
 """CONCURRENCY TESTS"""
 async def test_only_one_of_ten_concurrent_purchases_succeeds(
     client: AsyncClient,
@@ -316,3 +523,211 @@ async def test_only_one_of_ten_concurrent_purchases_succeeds(
     assert count == 1
     assert ledger_sum == balance
 
+async def test_only_one_of_ten_concurrent_buyers_gets_the_last_item(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    fund,
+    set_product,
+):
+    product = await set_product(unit_price_paisa=40_000, in_stock=1)
+
+    shoppers = []
+    for i in range(10):
+        headers, user = await make_auth(f"racer{i+1}")
+        await fund(user["id"], 100_000)
+        shoppers.append((headers, user))
+
+    async def buy(headers):
+        return await post_purchase(client, headers, [(product["id"], 1)])
+
+    responses = await asyncio.gather(*(buy(headers) for headers, _ in shoppers))
+
+    statuses = [r.status_code for r in responses]
+
+    assert statuses.count(201) == 1, [(r.status_code, r.text) for r in responses]
+    assert statuses.count(409) == 9, [(r.status_code, r.text) for r in responses]
+
+    assert await stock_of(session_factory, product["id"]) == 0
+
+    balances = [
+        await user_balance(session_factory, user["id"]) for _ , user in shoppers
+    ]
+
+    assert sorted(balances) == [60_000] + [100_000] * 9
+
+
+
+
+# ------------------------------
+"""BUSINESS-RULE GUARDRAILS"""
+# ------------------------------
+async def test_insufficient_balance_returns_409_without_changes(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    set_product,
+):
+    product = await set_product(unit_price_paisa=40_000, in_stock=10)
+    headers, user = await make_auth("shopper")  # zero balance
+
+    response = await post_purchase(client, headers, [(product["id"], 1)])
+
+    assert response.status_code == 409, response.text
+    assert "insufficient wallet balance" in response.json()["detail"].lower()
+    assert await user_balance(session_factory, user["id"]) == 0
+    assert await stock_of(session_factory, product["id"]) == 10
+    assert await purchase_count(session_factory, user["id"]) == 0
+    assert await idempotency_rows(session_factory, user["id"]) == 0
+
+async def test_insufficient_stock_returns_409_without_changes(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    fund,
+    set_product,
+):
+    product = await set_product(unit_price_paisa=40_000, in_stock=1)
+    headers, user = await make_auth("shopper")
+    await fund(user["id"], 100_000)
+
+    response = await post_purchase(client, headers, [(product["id"], 2)])
+
+    assert response.status_code == 409, response.text
+    assert "insufficient stock" in response.json()["detail"].lower()
+    assert await stock_of(session_factory, product["id"]) == 1
+    assert await user_balance(session_factory, user["id"]) == 100_000
+    assert await purchase_count(session_factory, user["id"]) == 0
+
+async def test_unknown_product_returns_404(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    fund,
+):
+    headers, user = await make_auth("shopper")
+    await fund(user["id"], 100_000)
+    missing_product_id = 10**12
+
+    response = await post_purchase(client, headers, [(missing_product_id, 1)])
+
+    assert response.status_code == 404, response.text
+    assert "not found" in response.json()["detail"].lower()
+    assert await user_balance(session_factory, user["id"]) == 100_000
+    assert await purchase_count(session_factory, user["id"]) == 0
+    assert await idempotency_rows(session_factory, user["id"]) == 0
+
+# currently the seeded db has constraints: 
+#   - no more than 100 different products purchase at one request
+#   - no more than 100 different products purchase at one request
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"items": []},
+        {"items": [{"product_id": 0, "quantity": 1}]},
+        {"items": [{"product_id": -1, "quantity": 1}]},
+        {"items": [{"product_id": 1, "quantity": 0}]},
+        {"items": [{"product_id": 1, "quantity": -1}]},
+        {"items": [{"product_id": 1, "quantity": 101}]},
+        {
+            "items": [
+                {"product_id": 1, "quantity": 1},
+                {"product_id": 1, "quantity": 1},
+            ]
+        },
+        {"items": [{"product_id": 1, "quantity": 1}] * 101},
+    ],
+)
+async def test_invalid_purchase_payload_returns_422(
+    client: AsyncClient,
+    make_auth,
+    payload,
+):
+    headers, _ = await make_auth("shopper")
+
+    response = await client.post(
+        "/purchases",
+        json=payload,
+        headers={**headers, "Idempotency-Key": new_key()},
+    )
+
+    assert response.status_code == 422, response.text
+
+@pytest.mark.parametrize(
+    "headers_update",
+    [
+        None,                              # missing header entirely
+        {"Idempotency-Key": ""},           # min_length=1
+        {"Idempotency-Key": "x" * 129},    # max_length=128
+    ],
+)
+async def test_invalid_idempotency_header_returns_422(
+    client: AsyncClient,
+    make_auth,
+    headers_update,
+):
+    headers, _ = await make_auth("shopper")
+    headers = {**headers, **(headers_update or {})}
+
+    response = await client.post(
+        "/purchases",
+        json={"items": [{"product_id": 1, "quantity": 1}]},
+        headers=headers,
+    )
+
+    assert response.status_code == 422, response.text
+
+async def test_total_equal_to_bigint_passes_capacity_check(
+    client: AsyncClient,
+    make_auth,
+    set_product,
+):
+    product = await set_product(unit_price_paisa=MAX_BIGINT, in_stock=10)
+    headers, user = await make_auth("shopper")  # zero balance
+
+    response = await post_purchase(client, headers, [(product["id"], 1)])
+
+    # total == MAX_BIGINT is allowed by the capacity check, then fails on balance
+    assert response.status_code == 409, response.text
+    assert "balance" in response.json()["detail"].lower()
+
+async def test_total_above_bigint_returns_422(
+    client: AsyncClient,
+    make_auth,
+    set_product,
+):
+    product = await set_product(unit_price_paisa=MAX_BIGINT, in_stock=10)
+    headers, _ = await make_auth("shopper")
+
+    response = await post_purchase(client, headers, [(product["id"], 2)])
+
+    assert response.status_code == 422, response.text
+    assert "purchase limit" in response.json()["detail"].lower()
+
+async def test_merchant_capacity_returns_503(
+    client: AsyncClient,
+    session_factory: async_sessionmaker[AsyncSession],
+    make_auth,
+    fund,
+    set_product,
+):
+    product = await set_product(unit_price_paisa=40_000, in_stock=10)
+    headers, user = await make_auth("shopper")
+    await fund(user["id"], 100_000)
+
+    async with session_factory() as session:
+        async with session.begin():
+            merchant = await session.scalar(
+                select(models.Wallet).where(models.Wallet.kind == "merchant")
+            )
+            assert merchant is not None, "seed data missing: merchant wallet"
+            merchant.balance_paisa = MAX_BIGINT - 1
+
+    response = await post_purchase(client, headers, [(product["id"], 1)])
+
+    assert response.status_code == 503, response.text
+    assert "merchant wallet" in response.json()["detail"].lower()
+    assert await user_balance(session_factory, user["id"]) == 100_000
+    assert await stock_of(session_factory, product["id"]) == 10
+    assert await purchase_count(session_factory, user["id"]) == 0
