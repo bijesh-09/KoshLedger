@@ -4,6 +4,7 @@ from app.utils.passwords import hash_pwd
 from app import models
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from hashlib import sha256
 
 def new_key() -> str:
     return f"test-{uuid4()}"
@@ -67,3 +68,10 @@ async def idempotency_rows(
         if key is not None:
             stmt = stmt.where(models.IdempotencyKey.key == key)
         return await session.scalar(stmt)
+
+async def purchase_hash(items):
+    normalized_items = sorted( items, key=lambda item: item[0])
+    request_fingerprint = "purchase:v1:" + ";".join(
+        f"{product_id}:{quantity}" for product_id, quantity in normalized_items
+    )
+    return sha256(request_fingerprint.encode("utf-8")).hexdigest()
