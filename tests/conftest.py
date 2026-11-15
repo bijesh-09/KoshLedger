@@ -3,7 +3,7 @@ from alembic.config import Config
 from alembic import command
 import pytest, pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncEngine, AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, select
 from app.main import app
 from app.database import get_async_db
 from httpx import ASGITransport, AsyncClient
@@ -16,6 +16,7 @@ db_user = settings.database_username
 db_host = settings.database_hostname
 db_name = settings.database_name
 test_db_name = settings.test_database_name
+from uuid import uuid4
 
 # using psycopg for alembic, while asyncpg for lifetime db conn, and testdb
 SYNC_TEST_URL = f"postgresql+psycopg://{db_user}:{db_pass}@{db_host}/{test_db_name}" 
@@ -229,6 +230,55 @@ async def make_auth(
         return token_headers, user # returning tuple
 
     return _make_auth # return fn reference cuz we need to use fixture as fn call
+
+
+@pytest_asyncio.fixture
+async def fund(session_factory: async_sessionmaker[AsyncSession]):
+    """Credit a user wallet with a balanced transaction (keeps the ledger honest)."""
+
+    async def _fund(user_id: int, amount_paisa: int) -> None:
+        async with session_factory() as session:
+            async with session.begin():
+                user_wallet = await session.scalar(
+                    select(models.Wallet).where(
+                        models.Wallet.user_id == user_id,
+                        models.Wallet.kind == "user",
+                    )
+                )
+                treasury = await session.scalar(
+                    select(models.Wallet).where(models.Wallet.kind == "treasury")
+                )
+                assert user_wallet is not None, "make_user did not create a wallet"
+                assert treasury is not None, "seed data missing: treasury wallet"
+
+                tx = models.Transaction(
+                    reference=str(uuid4()),
+                    type="faucet",
+                    user_id=user_id,
+                    description="test funding",
+                )
+                session.add(tx)
+                await session.flush()
+
+                session.add_all(
+                    [
+                        models.LedgerEntry(
+                            transaction_id=tx.id,
+                            wallet_id=treasury.id,
+                            amount_paisa=-amount_paisa,
+                        ),
+                        models.LedgerEntry(
+                            transaction_id=tx.id,
+                            wallet_id=user_wallet.id,
+                            amount_paisa=amount_paisa,
+                        ),
+                    ]
+                )
+                user_wallet.balance_paisa += amount_paisa
+                treasury.balance_paisa -= amount_paisa
+
+    return _fund
+
 
 """------------------------------------------------------------------------------------------------------------------------------------------------------"""
 
