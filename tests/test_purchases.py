@@ -20,53 +20,6 @@ import app.routers.purchases as purchases_router
 # ------------------------------
 
 @pytest_asyncio.fixture
-async def fund(session_factory: async_sessionmaker[AsyncSession]):
-    """Credit a user wallet with a balanced transaction (keeps the ledger honest)."""
-
-    async def _fund(user_id: int, amount_paisa: int) -> None:
-        async with session_factory() as session:
-            async with session.begin():
-                user_wallet = await session.scalar(
-                    select(models.Wallet).where(
-                        models.Wallet.user_id == user_id,
-                        models.Wallet.kind == "user",
-                    )
-                )
-                treasury = await session.scalar(
-                    select(models.Wallet).where(models.Wallet.kind == "treasury")
-                )
-                assert user_wallet is not None, "make_user did not create a wallet"
-                assert treasury is not None, "seed data missing: treasury wallet"
-
-                tx = models.Transaction(
-                    reference=str(uuid4()),
-                    type="faucet",
-                    user_id=user_id,
-                    description="test funding",
-                )
-                session.add(tx)
-                await session.flush()
-
-                session.add_all(
-                    [
-                        models.LedgerEntry(
-                            transaction_id=tx.id,
-                            wallet_id=treasury.id,
-                            amount_paisa=-amount_paisa,
-                        ),
-                        models.LedgerEntry(
-                            transaction_id=tx.id,
-                            wallet_id=user_wallet.id,
-                            amount_paisa=amount_paisa,
-                        ),
-                    ]
-                )
-                user_wallet.balance_paisa += amount_paisa
-                treasury.balance_paisa -= amount_paisa
-
-    return _fund
-
-@pytest_asyncio.fixture
 async def get_products(session_factory: async_sessionmaker[AsyncSession]):
     async def _get_products(n: int, min_stock: int = 10) -> list[dict[str, int]]:
         async with session_factory() as session:
@@ -425,7 +378,7 @@ async def test_error_after_mutations_rolls_back_everything(
     #   - transactions INSERT
     #   - purchase_items + ledger_entries staged
     # so update() in the router and runs only after these above are done
-    monkeypatch.setattr(purchases_router, "update", explode) 
+    monkeypatch.setattr(purchases_router, "update", explode)  # monkeypatch replaces the update() with explode() in purchases.py
 
     with pytest.raises(RuntimeError):
         await post_purchase(client, headers, items, key=key)
