@@ -2,6 +2,7 @@ from uuid import uuid4
 from httpx import AsyncClient
 from app.utils.passwords import hash_pwd
 from app import models
+from app.routers.faucet import FAUCET_AMOUNT_PAISA
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
 from hashlib import sha256
@@ -21,6 +22,45 @@ async def post_purchase(
         json={"items": [{"product_id": pid, "quantity": qty} for pid, qty in items]},
         headers={**headers, "Idempotency-Key": key or new_key()},
     )
+
+# auto generates idem key if not provided
+async def post_faucet(
+    client: AsyncClient,
+    headers: dict[str, str],
+    key: str | None = None,
+):
+    return await client.post(
+        "/faucet",
+        headers={**headers, "Idempotency-Key": key or new_key()},
+    )
+
+def faucet_hash() -> str:
+    # Faucet has no body, so every faucet operation shares this exact request hash.
+    return sha256(
+        f"faucet:v1:{FAUCET_AMOUNT_PAISA}".encode("utf-8")
+    ).hexdigest()
+
+# auto generates idem key if not provided
+async def post_transfer(
+    client: AsyncClient,
+    headers: dict[str, str],
+    recipient_username: str,
+    amount_rupees,
+    key: str | None = None,
+):
+    return await client.post(
+        "/transfers",
+        json={
+            "recipient_username": recipient_username,
+            "amount_rupees": str(amount_rupees),
+        },
+        headers={**headers, "Idempotency-Key": key or new_key()},
+    )
+
+def transfer_hash(recipient_username: str, amount_paisa: int) -> str:
+    return sha256(
+        f"transfer:v1:{recipient_username.lower()}:{amount_paisa}".encode("utf-8")
+    ).hexdigest()
 
 async def user_balance(session_factory: async_sessionmaker[AsyncSession], user_id: int) -> int:
     async with session_factory() as session:
@@ -48,12 +88,44 @@ async def purchase_count(session_factory: async_sessionmaker[AsyncSession], user
             )
         )
 
+async def faucet_count(session_factory: async_sessionmaker[AsyncSession], user_id: int) -> int:
+    async with session_factory() as session:
+        return await session.scalar(
+            select(func.count())
+            .select_from(models.Transaction)
+            .where(
+                models.Transaction.user_id == user_id,
+                models.Transaction.type == "faucet",
+            )
+        )
+
+async def transfer_count(session_factory: async_sessionmaker[AsyncSession], user_id: int) -> int:
+    async with session_factory() as session:
+        return await session.scalar(
+            select(func.count())
+            .select_from(models.Transaction)
+            .where(
+                models.Transaction.user_id == user_id,
+                models.Transaction.type == "transfer",
+            )
+        )
+
 async def ledger_sum_of_buyer(session_factory: async_sessionmaker[AsyncSession], user_id: int) -> int:
     async with session_factory() as session:
         return await session.scalar(
             select(func.coalesce(func.sum(models.LedgerEntry.amount_paisa), 0))
             .join(models.Wallet, models.Wallet.id == models.LedgerEntry.wallet_id)
             .where(models.Wallet.user_id == user_id)
+        )
+
+async def ledger_sum_of_wallet(
+    session_factory: async_sessionmaker[AsyncSession],
+    wallet_id: int,
+) -> int:
+    async with session_factory() as session:
+        return await session.scalar(
+            select(func.coalesce(func.sum(models.LedgerEntry.amount_paisa), 0))
+            .where(models.LedgerEntry.wallet_id == wallet_id)
         )
 
 async def idempotency_rows(
