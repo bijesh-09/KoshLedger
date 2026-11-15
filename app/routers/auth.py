@@ -18,6 +18,13 @@ router = APIRouter(prefix="/auth")
 @router.post("/register", status_code=status.HTTP_201_CREATED, response_model=schemas.UserCreated, tags=["register"])
 async def register(payload: schemas.UserBase, session: AsyncSession = Depends(get_async_db)):
 
+    SYSTEM_USERNAMES = {"treasury", "merchant"}
+    if payload.username in SYSTEM_USERNAMES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You cannot register with system account's username.",
+    )
+    
     # see if password is compromised via third party api, and also a pydantic field_validator
     try:
         compromised = await is_password_compromised(payload.password)
@@ -110,3 +117,4 @@ async def login_for_access_token(form_data: Annotated[OAuth2PasswordRequestForm,
     access_token = oauth2.create_access_token(data={"sub": str(user.id)}) # token sends everything in a literal str so typecast int id to str
 
     return schemas.Token(access_token=access_token, token_type="bearer")
+

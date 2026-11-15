@@ -228,7 +228,7 @@ async def recover_account(
 
     recovery_deadline = current_user.deleted_at + timedelta(days=30)
     
-    if now > recovery_deadline:
+    if now >= recovery_deadline:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="The account recovery period has expired.",
