@@ -25,13 +25,13 @@ FILTER_DAYS = Annotated[Literal[7, 14, 30], BeforeValidator(_to_int)]
 async def get_active_users(
         session: Annotated[AsyncSession, Depends(get_async_db)],
         current_user: Annotated[models.User, Depends(get_current_active_user)] ,
-        limit: int = 30, search: str| None  = ""
+        limit: Annotated[int, Query(ge=0, le=100)] = 30, search: str| None  = ""
     ):  #here limit and search are custome made query parameter
 
     # async with session.begin(): # DONT USE THIS FOR HERE, since fastapi cached the get_async_db since get_current_active_user dep used it before, 
     #   and now get_active_users also need it, so same session is used. Hence another tx cannot be begin if a tx is already running before
     stmt = select(models.User).where(
-        models.User.username.not_in(["treasury", "merchant"]),
+        models.User.username.not_in(["treasury", "merchant", f"{current_user.username}"]),
         models.User.is_active.is_(True),
         models.User.deleted_at.is_(None),
     )
