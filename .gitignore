@@ -1,6 +1,6 @@
 project_steps.md
 /project_steps.md
-api_endpoints.md
+endpoints_&_tests.md
 
 # Secrets: never commit real env files
 .env
