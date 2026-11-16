@@ -693,7 +693,7 @@ async def test_protected_endpoint_rejects_invalid_tokens(
 """ACCOUNT LIFECYCLE AT LOGIN"""
 # ------------------------------
 
-async def test_inactive_user_can_log_in_but_cannot_access_protected_routes(
+async def test_inactive_user_can_log_in(
     client: AsyncClient,
     make_auth,
 ):
@@ -705,14 +705,9 @@ async def test_inactive_user_can_log_in_but_cannot_access_protected_routes(
     response = await login(client, "alice")
     assert response.status_code == 200, response.text
 
-    token_headers = bearer(response.json()["access_token"])
-
-    blocked = await client.get("/users/me", headers=token_headers)
-    assert blocked.status_code == 403, blocked.text
-    assert "deactivated" in blocked.json()["detail"].lower()
 
 
-async def test_deleted_user_within_recovery_window_can_log_in_but_cannot_access_protected_routes(
+async def test_deleted_user_within_recovery_window_can_log_in(
     client: AsyncClient,
     make_auth,
 ):
@@ -723,65 +718,6 @@ async def test_deleted_user_within_recovery_window_can_log_in_but_cannot_access_
 
     response = await login(client, "alice")
     assert response.status_code == 200, response.text
-
-    token_headers = bearer(response.json()["access_token"])
-
-    blocked = await client.get("/users/me", headers=token_headers)
-    assert blocked.status_code == 403, blocked.text
-    assert "pending deletion" in blocked.json()["detail"].lower()
-
-
-async def test_deactivated_and_deleted_accounts_cannot_do_the_opposite_action(
-    client: AsyncClient,
-    make_auth,
-):
-    # A deactivated (but not deleted) account cannot delete or recover.
-    inactive_headers, _ = await make_auth("inactiveuser")
-    assert (
-        await client.post("/users/me/deactivate", headers=inactive_headers)
-    ).status_code == 200
-
-    inactive_login = await login(client, "inactiveuser")
-    assert inactive_login.status_code == 200, inactive_login.text
-    inactive_token = bearer(inactive_login.json()["access_token"])
-
-    delete_attempt = await client.delete(
-        "/users/me/delete",
-        headers=inactive_token,
-    )
-    assert delete_attempt.status_code == 403, delete_attempt.text
-    assert "deactivated" in delete_attempt.json()["detail"].lower()
-
-    recover_attempt = await client.post(
-        "/users/me/recover",
-        headers=inactive_token,
-    )
-    assert recover_attempt.status_code == 403, recover_attempt.text
-    assert "not deleted at all" in recover_attempt.json()["detail"].lower()
-
-    # A deleted account cannot activate or delete itself again.
-    deleted_headers, _ = await make_auth("deleteduser")
-    assert (
-        await client.delete("/users/me/delete", headers=deleted_headers)
-    ).status_code == 204
-
-    deleted_login = await login(client, "deleteduser")
-    assert deleted_login.status_code == 200, deleted_login.text
-    deleted_token = bearer(deleted_login.json()["access_token"])
-
-    activate_attempt = await client.post(
-        "/users/me/activate",
-        headers=deleted_token,
-    )
-    assert activate_attempt.status_code == 403, activate_attempt.text
-    assert "pending deletion" in activate_attempt.json()["detail"].lower()
-
-    delete_again = await client.delete(
-        "/users/me/delete",
-        headers=deleted_token,
-    )
-    assert delete_again.status_code == 403, delete_again.text
-    assert "pending deletion" in delete_again.json()["detail"].lower()
 
 
 async def test_pending_deletion_token_stops_working_when_recovery_deadline_passes(
@@ -875,5 +811,147 @@ async def test_wrong_password_is_rejected_before_the_recovery_deadline_check(
 
     assert response.status_code == 401, response.text
     assert response.json()["detail"] == "Incorrect password"
+
+
+# ------------------------------
+"""/GLOBAL AUTH GUARDS"""
+# ------------------------------
+
+# Every endpoint that must be authenticated. GET /products is intentionally
+# absent because it is public.
+# (method, path, json_body, extra_headers)
+PROTECTED_ENDPOINTS = [
+    ("GET", "/users", None, None),
+    ("GET", "/users/me", None, None),
+    ("GET", "/users/me/transactions", None, None),
+    ("PATCH", "/users/me/change_username", {"username": "newname"}, None),
+    ("POST", "/users/me/deactivate", None, None),
+    ("POST", "/users/me/activate", None, None),
+    ("DELETE", "/users/me/delete", None, None),
+    ("POST", "/users/me/recover", None, None),
+    (
+        "POST",
+        "/faucet",
+        None,
+        {"Idempotency-Key": "auth-guard-faucet"},
+    ),
+    (
+        "POST",
+        "/purchases",
+        {"items": [{"product_id": 1, "quantity": 1}]},
+        {"Idempotency-Key": "auth-guard-purchase"},
+    ),
+    (
+        "POST",
+        "/transfers",
+        {"recipient_username": "bob", "amount_rupees": "10.00"},
+        {"Idempotency-Key": "auth-guard-transfer"},
+    ),
+    ("POST", "/products/choose_favourite/1", None, None),
+    ("DELETE", "/products/remove_favourite/1", None, None),
+]
+
+# /users/me/activate and /users/me/recover must remain reachable while the
+# account is inactive/deleted, so they are authenticated but not active-only.
+ACTIVE_ONLY_ENDPOINTS = [
+    endpoint
+    for endpoint in PROTECTED_ENDPOINTS
+    if endpoint[1] not in ("/users/me/activate", "/users/me/recover")
+]
+
+
+def endpoint_id(method: str, path: str) -> str:
+    return f"{method} {path}"
+
+
+@pytest.mark.parametrize(
+    "method, path, body, extra_headers",
+    PROTECTED_ENDPOINTS,
+    ids=[endpoint_id(method, path) for method, path, _, _ in PROTECTED_ENDPOINTS],
+)
+async def test_protected_endpoints_require_authentication(
+    client: AsyncClient,
+    method: str,
+    path: str,
+    body: dict | None,
+    extra_headers: dict | None,
+):
+    response = await client.request(
+        method,
+        path,
+        json=body,
+        headers=extra_headers,
+    )
+
+    assert response.status_code == 401, response.text
+
+
+@pytest.mark.parametrize(
+    "method, path, body, extra_headers",
+    ACTIVE_ONLY_ENDPOINTS,
+    ids=[endpoint_id(method, path) for method, path, _, _ in ACTIVE_ONLY_ENDPOINTS],
+)
+async def test_active_only_endpoints_reject_deactivated_users(
+    client: AsyncClient,
+    make_auth,
+    method: str,
+    path: str,
+    body: dict | None,
+    extra_headers: dict | None,
+):
+    headers, _ = await make_auth("alice")
+
+    deactivated = await client.post("/users/me/deactivate", headers=headers)
+    assert deactivated.status_code == 200, deactivated.text
+
+    response = await client.request(
+        method,
+        path,
+        json=body,
+        headers={**headers, **(extra_headers or {})},
+    )
+
+    assert response.status_code == 403, response.text
+    assert "deactivated" in response.json()["detail"].lower()
+
+
+@pytest.mark.parametrize(
+    "method, path, body, extra_headers",
+    ACTIVE_ONLY_ENDPOINTS,
+    ids=[endpoint_id(method, path) for method, path, _, _ in ACTIVE_ONLY_ENDPOINTS],
+)
+async def test_active_only_endpoints_reject_deleted_users(
+    client: AsyncClient,
+    make_auth,
+    method: str,
+    path: str,
+    body: dict | None,
+    extra_headers: dict | None,
+):
+    headers, _ = await make_auth("alice")
+
+    deleted = await client.delete("/users/me/delete", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+
+    response = await client.request(
+        method,
+        path,
+        json=body,
+        headers={**headers, **(extra_headers or {})},
+    )
+
+    assert response.status_code == 403, response.text
+    assert "pending deletion" in response.json()["detail"].lower()
+
+
+async def test_products_stay_public_for_anyone_whether_logged_in_or_not(
+    client: AsyncClient,
+    make_auth,
+):
+    headers, _ = await make_auth("alice")
+
+    response = await client.get("/products")
+
+    assert response.status_code == 200, response.text
 
 
