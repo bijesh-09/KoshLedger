@@ -644,6 +644,16 @@ async def test_faucet_ledger_entries_are_immutable(
                     {"amount": 0, "id": entry_id},
                 )
 
+    # The same BEFORE UPDATE OR DELETE trigger also blocks deletes; ledger
+    # corrections must be appended as compensating entries.
+    with pytest.raises(DBAPIError):
+        async with session_factory() as session:
+            async with session.begin():
+                await session.execute(
+                    text("DELETE FROM ledger_entries WHERE id = :id"),
+                    {"id": entry_id},
+                )
+
     async with session_factory() as session:
         amount = await session.scalar(
             select(models.LedgerEntry.amount_paisa).where(
