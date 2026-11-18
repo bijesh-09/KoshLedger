@@ -233,7 +233,7 @@ async def test_choose_favourite_twice_is_rejected(
     second = await client.post(path, headers=headers)
 
     assert first.status_code == 200, first.text
-    assert second.status_code == 404, second.text
+    assert second.status_code == 409, second.text
     assert "already favourited" in second.json()["detail"].lower()
     assert await favourite_count(session_factory, product["id"]) == 1
 
