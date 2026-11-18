@@ -69,7 +69,7 @@ async def choose_favourite_product(
 
     if any(fav.id == product.id for fav in user.favourites):
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_409_CONFLICT,
             detail="You have already favourited this product."
         )
     # Make this POST safe to retry: don't add a duplicate favourite.

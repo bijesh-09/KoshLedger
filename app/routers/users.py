@@ -177,7 +177,7 @@ async def activate_account(
     
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Account in pending deletion phase. Can be recovered wihtin {remaining_days} days.",
+                    detail=f"Account in pending deletion phase. Can be recovered within {remaining_days} days.",
                 )
 
     if current_user.is_active is True:
