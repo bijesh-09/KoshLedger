@@ -22,6 +22,19 @@ export function AuthProvider({ children }){
     // status: loading | anonymous | active | deactivated | pending_deleted | recovery_expired | error
     const [state, setState] = useState({ status: "loading", user: null, error: null })
 
+    // A single global prompt replaces the old "auto redirect to /login" behaviour.
+    // reason: "expired" (a request came back 401) | "anonymous" (protected page
+    // opened without a token). The dialog is rendered once, in App.
+    const [authPrompt, setAuthPrompt] = useState(null)
+
+    const promptAuth = useCallback((reason = "anonymous") => {
+        setAuthPrompt((current) => current ?? { reason })
+    }, [])
+
+    const dismissAuthPrompt = useCallback(() => {
+        setAuthPrompt(null)
+    }, [])
+
     const bootstrap = useCallback(async () => {
         if (!tokenStore.get()) {
             setState({ status: "anonymous", user: null, error: null })
@@ -58,6 +71,7 @@ export function AuthProvider({ children }){
     const login = useCallback(async (credentials) => {
 
         // user(i.e. userprofile) can remain as it is before login, but status must be reset
+        setAuthPrompt(null)
         setState((prev) => ({ ...prev, status: "loading", error: null }))
 
         try{
@@ -86,8 +100,18 @@ export function AuthProvider({ children }){
 
     const logout = useCallback(() => {
         authApi.logout() // it just removes token from localstorage
+        setAuthPrompt(null)
         setState({ status: "anonymous", user: null, error: null })
     }, [])
+
+    // Renaming is a user-initiated action with its own error surface (409 taken,
+    // 422 invalid), so errors are re-thrown for the caller instead of being
+    // parked in the global state like activate/recover do.
+    const changeUsername = useCallback(async (username) => {
+        const result = await authApi.changeUsername(username)
+        await bootstrap()
+        return result
+    }, [bootstrap])
 
     const activate = useCallback(async () => {
         try{
@@ -96,6 +120,20 @@ export function AuthProvider({ children }){
             setState((prev) => ({ ...prev, error: err.message }))
             return // do not bootstrap: it would overwrite this error with the same 403
         }
+        await bootstrap()
+    }, [bootstrap])
+
+    // Deactivate/delete succeed with 204/200, then bootstrap re-reads /users/me.
+    // That request now returns 403, so the app lands on the matching blocked
+    // status ("deactivated" / "pending_deleted") and the profile can offer the
+    // right recovery action. Errors are re-thrown for the confirmation dialog.
+    const deactivateAccount = useCallback(async () => {
+        await authApi.deactivate()
+        await bootstrap()
+    }, [bootstrap])
+
+    const deleteAccount = useCallback(async () => {
+        await authApi.deleteAccount()
         await bootstrap()
     }, [bootstrap])
 
@@ -109,11 +147,13 @@ export function AuthProvider({ children }){
         await bootstrap()
     }, [bootstrap])
 
-    // Any 401 from any component drops the whole app to "anonymous" once.
+    // Any 401 means the token is gone/expired. request() already cleared it, so
+    // surface the global "you will be logged out" prompt. The state is left
+    // alone until the user picks Continue or Cancel; both of those logout().
     // onUnauthorized() REGISTERS the handler and returns the unregister fn,
     // which is why this arrow returns it and React uses it as cleanup.
-    useEffect(() => onUnauthorized((err) => {
-        setState({ status: "anonymous", user: null, error: err.message })
+    useEffect(() => onUnauthorized(() => {
+        setAuthPrompt((current) => current ?? { reason: "expired" })
     }), [])
 
     // runs for the first render to update the state
@@ -124,8 +164,12 @@ export function AuthProvider({ children }){
     // The object stores function REFERENCES (login, register, ...), not their
     // return values — useMemo never calls them.
     const value = useMemo(() => ({
-        ...state, login, register, logout, activate, recover, refresh: bootstrap }),
-        [state, login, register, logout, activate, recover, bootstrap],
+        ...state, login, register, logout, activate, recover, refresh: bootstrap,
+        changeUsername, deactivateAccount, deleteAccount,
+        authPrompt, promptAuth, dismissAuthPrompt }),
+        [state, login, register, logout, activate, recover, bootstrap, changeUsername,
+         deactivateAccount, deleteAccount,
+         authPrompt, promptAuth, dismissAuthPrompt],
     )
 
     //modern way of using provider (React 19 allows <Context> instead of <Context.Provider>)

@@ -1,12 +1,13 @@
 const TOKEN_KEY = "kosh.access_token"
 
 export class ApiError extends Error{
-    constructor(status, message, { fields = {}, detail = null } = {}) {
+    constructor(status, message, { fields = {}, detail = null, retryAfter = null } = {}) {
         super(message)
         this.name = "ApiError"
         this.status = status
         this.fields = fields // { password: "String should have at least 8 characters" }
         this.detail = detail // raw `detail` payload
+        this.retryAfter = retryAfter // seconds from Retry-After, e.g. faucet cooldown
     }
 }
 
@@ -30,11 +31,11 @@ export function onUnauthorized(handler) {
 
 // My API returns {"detail": "string"} for most errors and a Pydantic
 // {"detail": [{loc, msg, type}]} array for validation errors.
-function normalizeError(status, payload) {
+function normalizeError(status, payload, retryAfter = null) {
   const detail = payload?.detail
 
   if (typeof detail === "string") {
-    return new ApiError(status, detail, { detail })
+    return new ApiError(status, detail, { detail, retryAfter })
   }
 
   if (Array.isArray(detail)) {
@@ -48,10 +49,10 @@ function normalizeError(status, payload) {
     }
     const message =
       detail.length === 1 ? detail[0].msg : "Please check the highlighted fields."
-    return new ApiError(status, message, { fields, detail })
+    return new ApiError(status, message, { fields, detail, retryAfter })
   }
 
-  return new ApiError(status, `Request failed (${status})`, { detail })
+  return new ApiError(status, `Request failed (${status})`, { detail, retryAfter })
 }
 
 
@@ -110,7 +111,15 @@ export async function request(
   }
 
   // returns payload as long as the range of status code is within 200 to 299, any greater than that will throw err res
-  if (!res.ok) throw normalizeError(res.status, payload)
+  if (!res.ok) {
+    const rawRetryAfter = res.headers.get("Retry-After")
+    const retryAfter = rawRetryAfter === null ? null : Number(rawRetryAfter)
+    throw normalizeError(
+      res.status,
+      payload,
+      Number.isFinite(retryAfter) ? retryAfter : null,
+    )
+  }
   
   return payload
 
