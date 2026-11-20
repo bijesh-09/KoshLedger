@@ -1,5 +1,15 @@
-import { Menu, Wallet } from "lucide-react"
+import { useState } from "react"
+import { Link, useNavigate } from "react-router-dom"
+import {
+  ChevronRight,
+  LogOut,
+  Menu,
+  Wallet,
+} from "lucide-react"
 
+import { BalancePill } from "@/components/account/balance-pill"
+import { UserAvatar } from "@/components/account/user-avatar"
+import { UserMenu } from "@/components/account/user-menu"
 import {
   Accordion,
   AccordionContent,
@@ -31,19 +41,21 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useAuth } from "@/lib/auth-context"
+import { scrollToContact } from "@/lib/scroll"
 
 import { navLinks, services } from "./nav-data"
 
 function Logo() {
   return (
-    <a href="#" className="flex shrink-0 items-center gap-2">
+    <Link to="/" className="flex shrink-0 items-center gap-2">
       <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
         <Wallet className="size-4" aria-hidden="true" />
       </span>
       <span className="font-heading text-base font-semibold tracking-tight">
         KoshLedger
       </span>
-    </a>
+    </Link>
   )
 }
 
@@ -52,7 +64,7 @@ function ServiceLink({ service }) {
 
   return (
     <NavigationMenuLink
-      href={service.href}
+      render={<Link to={`/${service.href}`} />}
       className="flex-col items-start gap-1 p-3"
     >
       <span className="flex items-center gap-2 text-sm font-medium">
@@ -67,13 +79,29 @@ function ServiceLink({ service }) {
 }
 
 export function SiteHeader() {
+  const { status, user, logout } = useAuth()
+  const navigate = useNavigate()
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  const signedIn = status === "active" && Boolean(user)
+
+  function closeMobile() {
+    setMobileOpen(false)
+  }
+
+  function handleLogout() {
+    closeMobile()
+    logout()
+    navigate("/", { replace: true })
+  }
+
   return (
     <TooltipProvider>
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/80 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
           <Logo />
 
-          <NavigationMenu className="hidden md:flex">
+          <NavigationMenu className="hidden lg:flex">
             <NavigationMenuList>
               <NavigationMenuItem value="services">
                 <NavigationMenuTrigger>Services</NavigationMenuTrigger>
@@ -86,44 +114,78 @@ export function SiteHeader() {
                 </NavigationMenuContent>
               </NavigationMenuItem>
 
-              {navLinks.map((item) => (
-                <NavigationMenuItem key={item.label}>
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <a
-                          href={item.href}
-                          className={navigationMenuTriggerStyle()}
-                        />
-                      }
-                    >
-                      {item.label}
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">
-                      {item.description}
-                    </TooltipContent>
-                  </Tooltip>
-                </NavigationMenuItem>
-              ))}
+              {navLinks.map((item) => {
+                const isContact = item.href.startsWith("#")
+
+                return (
+                  <NavigationMenuItem key={item.label}>
+                    <Tooltip>
+                      <TooltipTrigger
+                        render={
+                          isContact ? (
+                            <a
+                              href={item.href}
+                              className={navigationMenuTriggerStyle()}
+                              onClick={(event) => {
+                                // Stay on this route; the footer is local.
+                                event.preventDefault()
+                                scrollToContact()
+                              }}
+                            />
+                          ) : (
+                            <Link
+                              to={item.href}
+                              className={navigationMenuTriggerStyle()}
+                            />
+                          )
+                        }
+                      >
+                        {item.label}
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        {item.description}
+                      </TooltipContent>
+                    </Tooltip>
+                  </NavigationMenuItem>
+                )
+              })}
             </NavigationMenuList>
           </NavigationMenu>
 
-          <div className="hidden items-center gap-2 md:flex">
-            <Button variant="outline" size="sm" type="button">
-              Sign in
-            </Button>
-            <Button size="sm" type="button">
-              SignUp
-            </Button>
+          <div className="hidden items-center gap-2 lg:flex">
+            {signedIn ? (
+              <>
+                <BalancePill balance={user.wallet?.balance_rupees} />
+                <UserMenu />
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  nativeButton={false}
+                  render={<Link to="/login" />}
+                >
+                  Login
+                </Button>
+                <Button
+                  size="sm"
+                  nativeButton={false}
+                  render={<Link to="/signup" />}
+                >
+                  SignUp
+                </Button>
+              </>
+            )}
           </div>
 
-          <Sheet>
+          <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
             <SheetTrigger
               render={
                 <Button
                   variant="outline"
                   size="icon"
-                  className="md:hidden"
+                  className="lg:hidden"
                   aria-label="Open navigation menu"
                 />
               }
@@ -140,6 +202,47 @@ export function SiteHeader() {
                 <Logo />
               </SheetHeader>
 
+              {signedIn && (
+                <div className="border-b px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      closeMobile()
+                      navigate("/profile")
+                    }}
+                    className="flex w-full items-center gap-3 rounded-lg p-1 text-left transition-colors hover:bg-muted"
+                  >
+                    <UserAvatar
+                      seed={user.email || user.username}
+                      className="size-10 ring-1 ring-border/70"
+                      iconClassName="size-6"
+                    />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm font-medium">
+                        {user.username}
+                      </span>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {user.email}
+                      </span>
+                    </span>
+                    <ChevronRight
+                      className="size-4 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                  </button>
+
+                  <div className="mt-2 flex items-center justify-between gap-2 px-1">
+                    <BalancePill
+                      balance={user.wallet?.balance_rupees}
+                      className="bg-background/40"
+                    />
+                    <span className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Signed in
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <div className="flex-1 overflow-y-auto px-4 py-2">
                 <Accordion>
                   <AccordionItem value="services">
@@ -150,9 +253,10 @@ export function SiteHeader() {
                           const Icon = service.icon
 
                           return (
-                            <a
+                            <Link
                               key={service.label}
-                              href={service.href}
+                              to={`/${service.href}`}
+                              onClick={closeMobile}
                               className="flex gap-3 rounded-lg p-2 transition-colors hover:bg-muted"
                             >
                               <Icon
@@ -167,7 +271,7 @@ export function SiteHeader() {
                                   {service.description}
                                 </span>
                               </span>
-                            </a>
+                            </Link>
                           )
                         })}
                       </div>
@@ -178,30 +282,81 @@ export function SiteHeader() {
                 <Separator />
 
                 <nav className="flex flex-col py-1">
-                  {navLinks.map((item) => (
-                    <a
-                      key={item.label}
-                      href={item.href}
-                      className="rounded-lg px-2 py-2.5 transition-colors hover:bg-muted"
-                    >
-                      <span className="block text-sm font-medium">
-                        {item.label}
-                      </span>
-                      <span className="block text-xs leading-normal text-muted-foreground">
-                        {item.description}
-                      </span>
-                    </a>
-                  ))}
+                  {navLinks.map((item) => {
+                    const isContact = item.href.startsWith("#")
+                    const content = (
+                      <>
+                        <span className="block text-sm font-medium">
+                          {item.label}
+                        </span>
+                        <span className="block text-xs leading-normal text-muted-foreground">
+                          {item.description}
+                        </span>
+                      </>
+                    )
+                    const className =
+                      "rounded-lg px-2 py-2.5 transition-colors hover:bg-muted"
+
+                    return isContact ? (
+                      <a
+                        key={item.label}
+                        href={item.href}
+                        className={className}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          closeMobile()
+                          // The sheet scroll-locks until its exit animation
+                          // finishes, so wait a beat before scrolling.
+                          window.setTimeout(scrollToContact, 250)
+                        }}
+                      >
+                        {content}
+                      </a>
+                    ) : (
+                      <Link
+                        key={item.label}
+                        to={item.href}
+                        onClick={closeMobile}
+                        className={className}
+                      >
+                        {content}
+                      </Link>
+                    )
+                  })}
                 </nav>
               </div>
 
               <SheetFooter className="border-t">
-                <Button variant="outline" className="w-full" type="button">
-                  Sign in
-                </Button>
-                <Button className="w-full" type="button">
-                  SignUp
-                </Button>
+                {signedIn ? (
+                  <Button
+                    variant="destructive"
+                    className="w-full"
+                    onClick={handleLogout}
+                  >
+                    <LogOut className="size-4" aria-hidden="true" />
+                    Logout
+                  </Button>
+                ) : (
+                  <>
+                    <Button
+                      variant="outline"
+                      className="w-full"
+                      nativeButton={false}
+                      render={<Link to="/login" />}
+                      onClick={closeMobile}
+                    >
+                      Login
+                    </Button>
+                    <Button
+                      className="w-full"
+                      nativeButton={false}
+                      render={<Link to="/signup" />}
+                      onClick={closeMobile}
+                    >
+                      SignUp
+                    </Button>
+                  </>
+                )}
               </SheetFooter>
             </SheetContent>
           </Sheet>

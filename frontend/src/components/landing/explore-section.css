@@ -1,0 +1,124 @@
+/*
+ * "Explore" services map: yellow rounded-rectangle services on a dark canvas,
+ * sky-blue comets travelling out of Login/SignUp along solid wires, and paler
+ * aqua comets running along the dotted sub-branches.
+ */
+
+/* ------------------------------------------------------------- wires */
+
+.explore-wire {
+  stroke: rgba(153, 199, 255, 0.34);
+  stroke-width: 2.4;
+}
+
+.explore-wire--trunk {
+  stroke: rgba(173, 219, 255, 0.42);
+  stroke-width: 3.2;
+}
+
+.explore-wire--dotted {
+  stroke: rgba(160, 205, 255, 0.45);
+  stroke-width: 1.6;
+  stroke-dasharray: 1 8;
+  stroke-linecap: round;
+}
+
+/* ------------------------------------------------------------ comets */
+
+.explore-beam-group--main {
+  color: #63c8ff;
+}
+
+.explore-beam-group--sub {
+  color: #ade9ff;
+}
+
+.explore-beam {
+  animation-name: explore-beam-travel;
+}
+
+.explore-beam.comet--head {
+  stroke-width: 4.6;
+  filter: drop-shadow(0 0 8px currentColor)
+    drop-shadow(0 0 26px currentColor);
+}
+
+.explore-beam.comet--tail-1 {
+  stroke-width: 3.8;
+  filter: drop-shadow(0 0 12px currentColor);
+}
+
+.explore-beam.comet--tail-2 {
+  stroke-width: 3.4;
+  filter: drop-shadow(0 0 7px currentColor);
+}
+
+.explore-beam.comet--tail-3 {
+  stroke-width: 3;
+}
+
+.explore-beam.comet--tail-4 {
+  stroke-width: 2.6;
+}
+
+.explore-beam.comet--tail-5 {
+  stroke-width: 2.2;
+}
+
+.explore-beam.comet--tail-6 {
+  stroke-width: 1.8;
+}
+
+@keyframes explore-beam-travel {
+  0% {
+    stroke-dashoffset: 0px;
+    stroke-opacity: 0;
+  }
+  5% {
+    stroke-opacity: 1;
+  }
+  90% {
+    stroke-opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: calc(-1 * var(--comet-total));
+    stroke-opacity: 0;
+  }
+}
+
+/* ------------------------------------------------------------- nodes */
+
+.explore-node-main {
+  filter: drop-shadow(0 0 10px rgba(250, 204, 21, 0.5))
+    drop-shadow(0 0 34px rgba(250, 204, 21, 0.2));
+}
+
+.explore-node-sub {
+  filter: drop-shadow(0 0 7px rgba(251, 146, 60, 0.48))
+    drop-shadow(0 0 22px rgba(234, 88, 12, 0.16));
+}
+
+.explore-source-ring {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: explore-source-ring 7s ease-out infinite;
+}
+
+@keyframes explore-source-ring {
+  0% {
+    transform: scale(0.96);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(1.08);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explore-source-ring {
+    animation: none;
+    opacity: 0.3;
+  }
+}

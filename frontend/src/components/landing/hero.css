@@ -1,0 +1,154 @@
+/*
+ * Hero-only visuals: the glowing/shimmering wordmark and the comet that runs
+ * around each illustration tile.
+ */
+
+/* ------------------------------------------------------------ wordmark */
+
+.hero-title-glow {
+  background-image: linear-gradient(
+    105deg,
+    #eab308 0%,
+    #eab308 36%,
+    #fff8d6 50%,
+    #eab308 64%,
+    #eab308 100%
+  );
+  background-size: 300% 100%;
+  background-position: 100% 50%;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: hero-title-shimmer 14s linear infinite;
+  filter: drop-shadow(0 0 13px oklch(0.86 0.19 95 / 0.32))
+    drop-shadow(0 0 38px oklch(0.86 0.19 95 / 0.14));
+}
+
+@keyframes hero-title-shimmer {
+  0% {
+    background-position: 100% 50%;
+    filter: drop-shadow(0 0 11px oklch(0.86 0.19 95 / 0.26))
+      drop-shadow(0 0 34px oklch(0.86 0.19 95 / 0.12));
+  }
+  50% {
+    filter: drop-shadow(0 0 24px oklch(0.95 0.12 100 / 0.6))
+      drop-shadow(0 0 64px oklch(0.86 0.19 95 / 0.34));
+  }
+  100% {
+    background-position: 0% 50%;
+    filter: drop-shadow(0 0 11px oklch(0.86 0.19 95 / 0.26))
+      drop-shadow(0 0 34px oklch(0.86 0.19 95 / 0.12));
+  }
+}
+
+.hero-title-sub {
+  color: oklch(0.79 0.11 88);
+  text-shadow:
+    0 0 22px oklch(0.79 0.11 88 / 0.22),
+    0 0 55px oklch(0.79 0.11 88 / 0.1);
+}
+
+/* ---------------------------------------------------- tile edge comet */
+
+.hero-tile {
+  --hero-beam-orange: oklch(0.78 0.17 55);
+  --hero-beam-blue: oklch(0.76 0.14 236);
+  box-shadow:
+    0 26px 70px -40px rgba(0, 0, 0, 0.95),
+    0 0 90px -38px var(--tile-tone);
+}
+
+/*
+ * Both columns share the same 16s cycle. Column one runs clockwise from the
+ * top-left corner; column two runs anticlockwise from a phase that mirrors it
+ * exactly. The mirror anchor is 80.13% of the perimeter (100% minus the
+ * top-edge arc, plus the head length): at that phase a comet facing backwards
+ * sits precisely where the clockwise comet's reflection would be, so when one
+ * column's head reaches the middle of its right edge the other reaches the
+ * middle of its left edge.
+ */
+.hero-edge-beam {
+  stroke-width: 0.8;
+  stroke-opacity: 1;
+}
+
+.hero-edge-beam--cw {
+  animation-name: hero-edge-cw;
+}
+
+.hero-edge-beam--ccw {
+  animation-name: hero-edge-ccw;
+}
+
+.hero-edge-beam.comet--head {
+  stroke-width: 1.6;
+  filter: drop-shadow(0 0 9px currentColor)
+    drop-shadow(0 0 34px currentColor);
+}
+
+.hero-edge-beam.comet--tail-1 {
+  stroke-width: 1.4;
+  filter: drop-shadow(0 0 14px currentColor);
+}
+
+.hero-edge-beam.comet--tail-2 {
+  stroke-width: 1.28;
+  filter: drop-shadow(0 0 8px currentColor);
+}
+
+.hero-edge-beam.comet--tail-3 {
+  stroke-width: 1.16;
+}
+
+.hero-edge-beam.comet--tail-4 {
+  stroke-width: 1.04;
+}
+
+.hero-edge-beam.comet--tail-5 {
+  stroke-width: 0.92;
+}
+
+.hero-edge-beam.comet--tail-6 {
+  stroke-width: 0.8;
+}
+
+@keyframes hero-edge-cw {
+  0% {
+    stroke-dashoffset: 0px;
+    stroke-opacity: 0;
+  }
+  4% {
+    stroke-opacity: 1;
+  }
+  92% {
+    stroke-opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: calc(-1 * var(--comet-total));
+    stroke-opacity: 0;
+  }
+}
+
+@keyframes hero-edge-ccw {
+  0% {
+    stroke-dashoffset: calc(0.8013 * var(--comet-total));
+    stroke-opacity: 0;
+  }
+  4% {
+    stroke-opacity: 1;
+  }
+  92% {
+    stroke-opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: calc(1.8013 * var(--comet-total));
+    stroke-opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-title-glow {
+    animation: none;
+    background-position: 50% 50%;
+  }
+}

@@ -1,0 +1,20 @@
+/*
+ * Shared by the hero tiles and the Explore wires: the comet body itself.
+ * Each context adds its own widths, colours and animation-name.
+ */
+
+.comet {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-fill-mode: backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comet {
+    animation: none;
+    opacity: 0 !important;
+  }
+}
