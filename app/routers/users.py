@@ -21,6 +21,15 @@ def _to_int(days):
 
 FILTER_DAYS = Annotated[Literal[7, 14, 30], BeforeValidator(_to_int)]
 
+# transactions has no amount column. Each operation that creates one stores its
+# response in idempotency_keys.response_json, and the amount lives under a
+# type-specific key there.
+TX_AMOUNT_KEYS = {
+    "faucet": "credited_rupees",
+    "transfer": "transferred_rupees",
+    "purchase": "total_rupees",
+}
+
 @router.get("", status_code=status.HTTP_200_OK, response_model=list[schemas.GetActiveUsers]) # we are returning list of user objects
 async def get_active_users(
         session: Annotated[AsyncSession, Depends(get_async_db)],
@@ -98,8 +107,40 @@ async def get_my_transactions(
         models.Transaction.created_at >= now - timedelta(days=filter_days)
     ).order_by(models.Transaction.created_at.desc(), models.Transaction.id.desc()).limit(limit)
 
-    transactions = await session.scalars(stmt)
-    return transactions
+    transactions = (await session.scalars(stmt)).all()
+
+    # transactions has no amount column, so read the amount each operation saved
+    # in idempotency_keys.response_json. The rows are already filtered, so this
+    # is one extra query over their ids.
+    saved_responses = {}
+    transaction_ids = [transaction.id for transaction in transactions]
+    if transaction_ids:
+        idem_rows = await session.execute(
+            select(
+                models.IdempotencyKey.transaction_id,
+                models.IdempotencyKey.response_json,
+            ).where(models.IdempotencyKey.transaction_id.in_(transaction_ids))
+        )
+        saved_responses = {
+            transaction_id: response_json
+            for transaction_id, response_json in idem_rows
+        }
+
+    # Return ready-to-serialize dicts: the amount is not an attribute of the
+    # ORM object, so attaching it there would be implicit and easy to lose.
+    return [
+        {
+            "transaction_reference": transaction.reference,
+            "type": transaction.type,
+            "description": transaction.description,
+            "created_at": transaction.created_at,
+            "amount_rupees": (saved_responses.get(transaction.id) or {}).get(
+                TX_AMOUNT_KEYS.get(transaction.type)
+            ),
+            "purchase_items": transaction.purchase_items,
+        }
+        for transaction in transactions
+    ]
 
 
 @router.patch(

@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 from uuid import uuid4
 
 import pytest
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app import models
 from app.utils import oauth2
+from tests.helpers import post_faucet, post_purchase, post_transfer
 
 
 DEFAULT_PASSWORD = "Str0ng!Pass"
@@ -427,6 +429,50 @@ async def test_transaction_history_returns_all_types_newest_first(
     assert line["product_title"] == product["image_title"]
     assert line["quantity"] == 3
     assert float(line["unit_price_rupees"]) == pytest.approx(123.45)
+
+
+async def test_transaction_history_exposes_amount_from_idempotent_response(
+    client: AsyncClient,
+    make_auth,
+    get_products,
+):
+    headers, _ = await make_auth("alice")
+    await make_auth("bob")
+    product = (await get_products(1))[0]
+
+    faucet = await post_faucet(client, headers)
+    purchase = await post_purchase(client, headers, [(product["id"], 2)])
+    transfer = await post_transfer(client, headers, "bob", "12.34")
+
+    assert faucet.status_code == 201, faucet.text
+    assert purchase.status_code == 201, purchase.text
+    assert transfer.status_code == 201, transfer.text
+
+    response = await client.get("/users/me/transactions", headers=headers)
+
+    assert response.status_code == 200, response.text
+    amounts = {
+        tx["type"]: Decimal(str(tx["amount_rupees"])) for tx in response.json()
+    }
+    assert amounts["faucet"] == Decimal("50000.00")
+    assert amounts["transfer"] == Decimal("12.34")
+    assert amounts["purchase"] == Decimal(
+        str(purchase.json()["total_rupees"])
+    ).quantize(Decimal("0.01"))
+
+
+async def test_transaction_history_amount_is_null_without_idempotency_row(
+    client: AsyncClient,
+    make_auth,
+    seed_transaction,
+):
+    headers, user = await make_auth("alice")
+    await seed_transaction(user["id"], tx_type="transfer")
+
+    response = await client.get("/users/me/transactions", headers=headers)
+
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["amount_rupees"] is None
 
 
 async def test_transaction_history_filters_by_type(

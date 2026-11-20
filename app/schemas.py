@@ -192,32 +192,16 @@ class UserTxPurchaseItem(BaseModel):
         return item
 
 class UserTxHistory(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    #the model_validator has to run first otherwise pydantic will search literally for our custom "transaction_reference" name as an attr in the received object
     transaction_reference: str = Field(min_length=36, max_length=36) 
     type: str
     description: str | None
     created_at: datetime
+
+    # Not a column on transactions: the router resolves it from the saved
+    # idempotent response (see TX_AMOUNT_KEYS in app/routers/users.py).
+    amount_rupees: Decimal | None = None
+    
     purchase_items: list[UserTxPurchaseItem] = Field(default_factory=list)
-
-    @model_validator(mode="before") # when mode=before, it runs and returns to pydantic before the pydantic builds up schema
-    @classmethod
-    def map_transaction_reference(cls, transaction): # transaction here is received from the returned obj from the endpoint
-
-        # the hasattr()  checks whether the input looks like the SQLAlchemy transaction object. If it does, the validator returns a dict to pydantic 
-        #   with the field names that the response schema expects. Otherwise, it passes the input through unchanged. That dictionary is an 
-        #     intermediate input to Pydantic, not the final JSON response. Pydantic uses it to populate a UserTxHistory object, and then FastAPI
-        #       serializes that object according to the response model. btw u can skip the hasattr check and directly return the dict without needing of fallback return
-        if hasattr(transaction, "reference"):
-            return {
-                "transaction_reference": transaction.reference, 
-                "type": transaction.type,
-                "description": transaction.description,
-                "created_at": transaction.created_at,
-                "purchase_items": transaction.purchase_items,
-            }
-        return transaction # fallback 
 
 
 class ProductListItem(BaseModel):
