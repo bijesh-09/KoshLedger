@@ -1,0 +1,23 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/auth/:path*", "destination": "https://koshledger-backend-latest.onrender.com/auth/:path*" },
+
+    { "source": "/users", "destination": "https://koshledger-backend-latest.onrender.com/users" },
+    { "source": "/users/:path*", "destination": "https://koshledger-backend-latest.onrender.com/users/:path*" },
+
+    { "source": "/products", "destination": "https://koshledger-backend-latest.onrender.com/products" },
+    { "source": "/products/:path*", "destination": "https://koshledger-backend-latest.onrender.com/products/:path*" },
+
+    { "source": "/faucet", "destination": "https://koshledger-backend-latest.onrender.com/faucet" },
+    { "source": "/faucet/:path*", "destination": "https://koshledger-backend-latest.onrender.com/faucet/:path*" },
+
+    { "source": "/purchases", "destination": "https://koshledger-backend-latest.onrender.com/purchases" },
+    { "source": "/purchases/:path*", "destination": "https://koshledger-backend-latest.onrender.com/purchases/:path*" },
+
+    { "source": "/transfers", "destination": "https://koshledger-backend-latest.onrender.com/transfers" },
+    { "source": "/transfers/:path*", "destination": "https://koshledger-backend-latest.onrender.com/transfers/:path*" },
+
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
