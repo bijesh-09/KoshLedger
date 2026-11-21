@@ -1,0 +1,43 @@
+# Python
+venv/
+.venv
+__pycache__/
+*.pyc
+.ruff_cache
+.mypy_cache
+
+# Environment files
+./app/.env
+.env
+
+# Frontend (excluded from backend build)
+frontend/
+frontend/**
+
+# Documentation
+endpoints_&_tests.md
+project_steps.md
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# AI tool state
+.codex/
+.agents/
+.claude/

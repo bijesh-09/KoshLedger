@@ -38,17 +38,17 @@ Thumbs.db
 .claude/settings.local.json
 
 # Node / frontend (Vite + React in frontend/)
-node_modules/
-.pnpm-store/
-dist-ssr/
-.vite/
-coverage/
-*.local
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-*.tsbuildinfo
-.eslintcache
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+frontend/.vite/
+frontend/coverage/
+frontend/*.local
+frontend/*.log
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+frontend/lerna-debug.log*
+frontend/*.tsbuildinfo
+frontend/.eslintcache
