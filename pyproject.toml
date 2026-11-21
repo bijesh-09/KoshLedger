@@ -35,4 +35,4 @@ dev = [
 ]
 
 [tool.uv]
-package = false
+package = false # makes sure the project itself is not installed into .venv as a python package
