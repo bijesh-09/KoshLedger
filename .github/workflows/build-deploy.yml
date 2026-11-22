@@ -1,0 +1,339 @@
+name: Build and Deploy Code
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch: # allows us to run the ci cd manually, useful for redeploying without making a dummy commit.
+
+# A migration must never be cancelled halfway, so queue runs instead of
+# cancelling the one in progress. Only the latest queued run is kept.
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read # allows GITHUB_TOKEN of runner to have read-only access to the repo's contents.
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # CI: tests + backend image.
+  #
+  # This job deliberately needs NO GitHub secrets. The tests point at the
+  # throwaway Postgres service below, so any credentials are fine. Keeping the
+  # test credentials hardcoded here means CI can never touch Neon by accident,
+  # even if a production variable is misconfigured.
+  # ---------------------------------------------------------------------------
+  build:
+    name: Test and build backend image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      DATABASE_HOSTNAME: localhost
+      DATABASE_USERNAME: postgres
+      DATABASE_PASSWORD: ci-test-password
+      # Tests use TEST_DATABASE_NAME, but app.database also builds an engine
+      # from DATABASE_NAME at import time, so keep both pointed at the service.
+      DATABASE_NAME: koshledger_test
+      TEST_DATABASE_NAME: koshledger_test
+
+      # app.config.Settings requires these fields for the app to import.
+      SECRET_KEY: ci-test-secret-key
+      TREASURY_EMAIL: treasury@example.com
+      TREASURY_PASSWORD: treasury-ci-password
+      MERCHANT_EMAIL: merchant@example.com
+      MERCHANT_PASSWORD: merchant-ci-password
+
+      # Repository variable DOCKER_REPO is the repository name only (no tag).
+      # It must match the image configured on the Render service, otherwise
+      # Render keeps pulling the old image.
+      IMAGE_NAME: ${{ vars.DOCKER_USERNAME }}/${{ vars.DOCKER_REPO }}
+
+    services:
+      postgres:
+        # The test suite runs `alembic downgrade base` + `upgrade head`.
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_DB: koshledger_test
+        ports:
+          # app/database.py builds its URL without a port, so it must be 5432.
+          - "5432:5432"
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      # Pinned to an exact tag: astral-sh/setup-uv does not publish a moving
+      # `v10` tag, so `@v10` would fail to resolve.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.4.0
+        with:
+          # Match the uv version baked into the Docker image.
+          version: "0.13.8"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      # --locked fails the run if uv.lock and pyproject.toml disagree, instead
+      # of silently resolving a different dependency set than the image uses.
+      - name: Install dependencies from the lockfile
+        run: uv sync --locked
+
+      # No separate migration step here: pytest's session-scoped `migrated_db`
+      # fixture (tests/conftest.py) runs `alembic downgrade base` + `upgrade
+      # head` against the Postgres service before the first test. The migrations
+      # themselves seed the products catalog and the treasury/merchant users.
+      - name: Run tests
+        run: uv run --no-sync pytest
+
+      - name: Validate image settings
+        run: |
+          : "${IMAGE_NAME:?Set the DOCKER_USERNAME and DOCKER_REPO repository variables}"
+          case "$IMAGE_NAME" in
+            */) echo "::error::DOCKER_REPO is empty (IMAGE_NAME ends with '/')"; exit 1 ;;
+          esac
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4.8.0
+        with:
+          username: ${{ vars.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4.4.1
+
+      - name: Build and push Docker image
+        id: docker_build
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          # Pull requests build the image but never push it. Fork PRs have no
+          # Docker Hub token, so pushing there would fail for no reason.
+          push: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Image digest
+        run: echo "${{ steps.docker_build.outputs.digest }}"
+
+  # ---------------------------------------------------------------------------
+  # Frontend build check. Vercel builds the real deployment from the deploy
+  # hook, but this catches a broken build before the hook is triggered.
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: Build frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up Node
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # CD step 1: migrate Neon. Runs on the runner over the public internet;
+  # Render is not involved. Must happen BEFORE the new code is deployed.
+  # ---------------------------------------------------------------------------
+  migrate:
+    name: Run Alembic migrations
+    needs: [build]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    environment:
+      name: prod
+
+    env:
+      # Neon DIRECT host (no "-pooler"). Split the Neon connection string into
+      # these four values; DATABASE_HOSTNAME must be a bare hostname.
+      DATABASE_HOSTNAME: ${{ vars.DATABASE_HOSTNAME }}
+      DATABASE_NAME: ${{ vars.DATABASE_NAME }}
+      DATABASE_USERNAME: ${{ vars.DATABASE_USERNAME }}
+      DATABASE_PASSWORD: ${{ secrets.DATABASE_PASSWORD }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.4.0
+        with:
+          version: "0.13.8"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Python 3.14
+        run: uv python install 3.14
+
+      - name: Validate production database settings
+        run: |
+          : "${DATABASE_HOSTNAME:?Set DATABASE_HOSTNAME in the prod environment}"
+          : "${DATABASE_NAME:?Set DATABASE_NAME in the prod environment (Neon default is neondb)}"
+          : "${DATABASE_USERNAME:?Set DATABASE_USERNAME in the prod environment}"
+          : "${DATABASE_PASSWORD:?Set DATABASE_PASSWORD in the prod environment}"
+
+          case "$DATABASE_HOSTNAME" in
+            *-pooler*|*:*) echo "::error::Use Neon's DIRECT host: no -pooler suffix, no scheme, no port."; exit 1 ;;
+          esac
+
+          case "$DATABASE_HOSTNAME" in
+            localhost|127.0.0.1) echo "::error::prod DATABASE_HOSTNAME points at localhost."; exit 1 ;;
+          esac
+
+      # Alembic is a main dependency, so --no-dev still installs it.
+      - name: Install migration dependencies only
+        run: uv sync --locked --no-dev
+
+      - name: Apply migrations
+        run: |
+          echo "Before:"
+          uv run --no-sync alembic current
+          uv run --no-sync alembic upgrade head
+          echo "After:"
+          uv run --no-sync alembic current
+
+  # ---------------------------------------------------------------------------
+  # CD step 2: deploy the backend image on Render.
+  # ---------------------------------------------------------------------------
+  deploy_on_render:
+    name: Deploy backend on Render
+    needs: [migrate]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    environment:
+      name: prod
+
+    env:
+      RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+      # Optional. With these two, the job waits for Render to report "live"
+      # instead of guessing. Without them it still triggers the deploy.
+      READ_ONLY_RENDER_API_KEY: ${{ secrets.READ_ONLY_RENDER_API_KEY }}
+      RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+      BACKEND_URL: ${{ vars.BACKEND_URL }}
+
+    steps:
+      - name: Trigger Render deploy
+        id: trigger
+        run: |
+          : "${RENDER_DEPLOY_HOOK_URL:?Add RENDER_DEPLOY_HOOK_URL to the prod environment}"
+
+          code=$(curl -sS -o /tmp/render.json -w '%{http_code}' -X POST "$RENDER_DEPLOY_HOOK_URL")
+          cat /tmp/render.json; echo
+          echo "http_code=$code" >> "$GITHUB_OUTPUT"
+
+          deploy_id=$(jq -r '.deploy.id // empty' /tmp/render.json 2>/dev/null || true)
+          echo "deploy_id=$deploy_id" >> "$GITHUB_OUTPUT"
+
+          # 200 = started, 202 = queued behind another deploy (no ID in body).
+          if [ "$code" != "200" ] && [ "$code" != "202" ]; then
+            echo "::error::Render deploy hook returned HTTP $code"
+            exit 1
+          fi
+
+          echo "Deploy ID: ${deploy_id:-none (queued behind another deploy)}"
+
+      - name: Wait for Render to report the deploy live
+        if: steps.trigger.outputs.deploy_id != ''
+        env:
+          DEPLOY_ID: ${{ steps.trigger.outputs.deploy_id }}
+        run: |
+          if [ -z "$READ_ONLY_RENDER_API_KEY" ] || [ -z "$RENDER_SERVICE_ID" ]; then
+            echo "::warning::READ_ONLY_RENDER_API_KEY / RENDER_SERVICE_ID not set; skipping the deploy-status wait"
+            exit 0
+          fi
+
+          # Fail fast on a wrong key/service ID instead of polling for 20 min.
+          if ! curl -fsS -H "Authorization: Bearer $READ_ONLY_RENDER_API_KEY" \
+              "https://api.render.com/v1/services/$RENDER_SERVICE_ID" >/dev/null; then
+            echo "::error::READ_ONLY_RENDER_API_KEY cannot read RENDER_SERVICE_ID=$RENDER_SERVICE_ID"
+            exit 1
+          fi
+
+          for i in $(seq 1 80); do
+            status=$(curl -fsS -H "Authorization: Bearer $READ_ONLY_RENDER_API_KEY" \
+              "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys/$DEPLOY_ID" \
+              | jq -r '.status // empty')
+
+            echo "attempt $i: $status"
+
+            case "$status" in
+              live) exit 0 ;;
+              build_failed|update_failed|pre_deploy_failed|canceled|deactivated)
+                echo "::error::Render deploy ended as $status"
+                exit 1
+                ;;
+            esac
+
+            sleep 15
+          done
+
+          echo "::error::Timed out waiting for the Render deploy"
+          exit 1
+
+      # Checks the DB-backed route too, which catches "image deployed but
+      # migrations never ran" (GET /products returns 500 in that case).
+      - name: Confirm the backend answers
+        if: vars.BACKEND_URL != ''
+        run: |
+          for i in $(seq 1 30); do
+            api=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$BACKEND_URL/openapi.json" || true)
+            db=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$BACKEND_URL/products" || true)
+            echo "attempt $i: /openapi.json=$api /products=$db"
+            if [ "$api" = "200" ] && [ "$db" = "200" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "::error::Backend did not answer with 200 on /openapi.json and /products"
+          exit 1
+
+  # ---------------------------------------------------------------------------
+  # CD step 3: deploy the frontend. Vercel builds from the latest commit on the
+  # hook's branch, so this is fire-and-forget; the dashboard shows the build.
+  # ---------------------------------------------------------------------------
+  deploy_on_vercel:
+    name: Deploy frontend on Vercel
+    needs: [frontend, deploy_on_render]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    environment:
+      name: prod
+
+    env:
+      VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+
+    steps:
+      - name: Trigger Vercel deploy hook
+        run: |
+          : "${VERCEL_DEPLOY_HOOK:?Add VERCEL_DEPLOY_HOOK to the prod environment}"
+          curl -fsS -X POST "$VERCEL_DEPLOY_HOOK" | tee /tmp/vercel.json
+          echo
