@@ -12,7 +12,13 @@ SQLALCHEMY_DATABASE_URL = f"postgresql+asyncpg://{db_user}:{db_pass}@{db_host}/{
 
 
 try:
-    engine = create_async_engine(SQLALCHEMY_DATABASE_URL) 
+    engine = create_async_engine(
+        SQLALCHEMY_DATABASE_URL,
+        # Neon suspends its compute after a few minutes idle and drops the
+        # connections. Without a pre-ping, the first request after Render wakes
+        # can grab a dead connection and return 500. This checks it first.
+        pool_pre_ping=True,
+    )
     print("Async SQLAlchemy engine initialized successfully.")
 except Exception as e:
     print(f"Failed to initialize Async SQLAlchemy engine (check database URL format): {e}")
