@@ -54,11 +54,7 @@ export function CartPage() {
       .catch((err) => {
         if (err?.name === "AbortError") return
         setProducts([])
-        setError(
-          err?.status === 0
-            ? "Cannot reach the server. Is the API running?"
-            : err?.message || "Could not load the catalog.",
-        )
+        setError(err?.message || "Could not load the catalog.")
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)

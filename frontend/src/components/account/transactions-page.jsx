@@ -231,11 +231,7 @@ export function TransactionsPage() {
       .catch((err) => {
         if (err?.name === "AbortError") return
         setTransactions([])
-        setError(
-          err?.status === 0
-            ? "Cannot reach the server. Is the API running?"
-            : err?.message || "Could not load your transactions.",
-        )
+        setError(err?.message || "Could not load your transactions.")
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)

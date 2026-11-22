@@ -273,12 +273,7 @@ export function ProfilePage() {
       const apiField = err.fields?.username
       if (apiField) setFieldError(apiField)
       else
-        setRenameError(
-          err.message ||
-            (err.status === 0
-              ? "Cannot reach the server. Is the API running?"
-              : "Could not change your username."),
-        )
+        setRenameError(err.message || "Could not change your username.")
     } finally {
       setRenameBusy(false)
     }

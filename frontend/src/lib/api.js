@@ -16,6 +16,58 @@ const RETRYABLE_STATUS = new Set([502, 503, 504])
 const MAX_RETRIES = 1
 const RETRY_DELAY_MS = 2_000
 
+// How long a request may stay silent before we tell the user the server is
+// cold-starting. A spinner with no explanation for 90s looks broken, so after
+// this point the UI shows a "starting up" notice until every request settles.
+const SLOW_REQUEST_MS = 4_000
+
+// Tiny external store for that notice. It tracks *concurrent* requests: the
+// notice appears only after the oldest in-flight request passes the threshold,
+// and disappears when the last one settles.
+let slow = false
+let inFlight = 0
+let slowTimer = null
+const slowListeners = new Set()
+
+function emitSlow() {
+  for (const listener of slowListeners) listener()
+}
+
+function beginRequest() {
+  inFlight += 1
+  if (inFlight === 1) {
+    slowTimer = setTimeout(() => {
+      slow = true
+      emitSlow()
+    }, SLOW_REQUEST_MS)
+  }
+}
+
+function endRequest() {
+  inFlight = Math.max(0, inFlight - 1)
+  if (inFlight > 0) return
+
+  clearTimeout(slowTimer)
+  slowTimer = null
+
+  if (slow) {
+    slow = false
+    emitSlow()
+  }
+}
+
+// Consumed by useSyncExternalStore in <ServerWakeNotice />.
+export function subscribeSlowRequests(listener) {
+  slowListeners.add(listener)
+  return () => {
+    slowListeners.delete(listener)
+  }
+}
+
+export function isSlowRequest() {
+  return slow
+}
+
 function timeoutFor(path) {
   for (const [pattern, ms] of ROUTE_TIMEOUTS) {
     if (pattern.test(path)) return ms
@@ -42,7 +94,7 @@ function mayRetry(path, method, headers) {
 }
 
 export class ApiError extends Error{
-    constructor(status, message, { fields = {}, detail = null, retryAfter = null, timedOut = false, attempts = 1 } = {}) {
+    constructor(status, message, { fields = {}, detail = null, retryAfter = null, timedOut = false, attempts = 1, coldStart = false } = {}) {
         super(message)
         this.name = "ApiError"
         this.status = status
@@ -51,6 +103,7 @@ export class ApiError extends Error{
         this.retryAfter = retryAfter // seconds from Retry-After, e.g. faucet cooldown
         this.timedOut = timedOut // true when we aborted because the server was too slow
         this.attempts = attempts // how many attempts the request actually used
+        this.coldStart = coldStart // true when the failure looks like a cold start
     }
 }
 
@@ -137,12 +190,16 @@ async function sendOnce({ path, method, body, baseHeaders, isForm, signal, auth,
     if (timedOut) {
       throw new ApiError(
         0,
-        `The server took longer than ${Math.round(timeoutMs / 1000)}s to answer.`,
-        { timedOut: true, attempts: attempt },
+        `The server is taking longer than ${Math.round(timeoutMs / 1000)}s to start. Please try again in about a minute.`,
+        { timedOut: true, attempts: attempt, coldStart: true },
       )
     }
     if (error.name === "AbortError") throw error
-    throw new ApiError(0, "Cannot reach the server. Is the API running?", { attempts: attempt })
+    throw new ApiError(
+      0,
+      "Cannot reach the server right now. Please try again in about a minute.",
+      { attempts: attempt, coldStart: true },
+    )
   } finally {
     clearTimeout(timer)
     signal?.removeEventListener("abort", forwardAbort)
@@ -180,6 +237,30 @@ async function sendOnce({ path, method, body, baseHeaders, isForm, signal, auth,
   return payload
 }
 
+// A 502/503/504 from the proxy usually means the instance is still booting.
+// Keep the server's own detail when it sent one (e.g. the 503 password-screening
+// error), otherwise replace "Request failed (502)" with something actionable.
+function asColdStart(error) {
+  if (
+    error instanceof ApiError &&
+    RETRYABLE_STATUS.has(error.status) &&
+    typeof error.detail !== "string"
+  ) {
+    return new ApiError(
+      error.status,
+      "The server is still starting up. Please try again in about a minute.",
+      {
+        detail: error.detail,
+        retryAfter: error.retryAfter,
+        timedOut: error.timedOut,
+        attempts: error.attempts,
+        coldStart: true,
+      },
+    )
+  }
+  return error
+}
+
 export async function request(
   path,
   { method = "GET", body, headers, signal, auth = true, timeoutMs = timeoutFor(path) } = {}
@@ -191,29 +272,35 @@ export async function request(
   const maxAttempts = mayRetry(path, method, baseHeaders) ? MAX_RETRIES + 1 : 1
 
   let lastError
+  beginRequest()
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      return await sendOnce({
-        path, method, body, baseHeaders, isForm, signal, auth, timeoutMs, attempt,
-      })
-    } catch (error) {
-      lastError = error
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        return await sendOnce({
+          path, method, body, baseHeaders, isForm, signal, auth, timeoutMs, attempt,
+        })
+      } catch (error) {
+        lastError = error
 
-      // A caller cancellation is final: the component unmounted or a newer
-      // keystroke superseded this request. Never retry it.
-      if (signal?.aborted || attempt >= maxAttempts) throw error
+        // A caller cancellation is final: the component unmounted or a newer
+        // keystroke superseded this request. Never retry it.
+        if (signal?.aborted) throw error
+        if (attempt >= maxAttempts) throw asColdStart(error)
 
-      const retryable =
-        error instanceof ApiError &&
-        (error.timedOut || error.status === 0 || RETRYABLE_STATUS.has(error.status))
+        const retryable =
+          error instanceof ApiError &&
+          (error.timedOut || error.status === 0 || RETRYABLE_STATUS.has(error.status))
 
-      if (!retryable) throw error
+        if (!retryable) throw error
 
-      // Cold start tip: one retry with a short delay covers the case where the
-      // instance woke up just after we gave up on the first attempt.
-      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
+        // Cold start tip: one retry with a short delay covers the case where the
+        // instance woke up just after we gave up on the first attempt.
+        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS))
+      }
     }
+  } finally {
+    endRequest()
   }
 
   throw lastError

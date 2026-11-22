@@ -207,12 +207,7 @@ export function AuthPage({ mode = "login" }) {
     } catch (err) {
       const mapped = fieldErrorsFromApi(err.fields)
       setFieldErrors(mapped)
-      setFormError(
-        err.message ||
-          (err.status === 0
-            ? "Cannot reach the server. Is the API running?"
-            : "Something went wrong. Please try again."),
-      )
+      setFormError(err.message || "Something went wrong. Please try again.")
     } finally {
       setBusy(false)
     }

@@ -8,6 +8,7 @@ import { TransactionsPage } from "@/components/account/transactions-page"
 import { FaucetPage } from "@/components/account/faucet-page"
 import { TransfersPage } from "@/components/account/transfers-page"
 import { AuthPrompt } from "@/components/account/auth-prompt"
+import { ServerWakeNotice } from "@/components/server-wake-notice"
 import { ProductsPage } from "@/components/products/products-page"
 import { ProductViewPage } from "@/components/products/product-view-page"
 import { CartPage } from "@/components/products/cart-page"
@@ -28,6 +29,7 @@ export default function App() {
   return (
     <>
       <ScrollToTop />
+      <ServerWakeNotice />
       <AuthPrompt />
       <Routes>
         <Route path="/" element={<LandingPage />} />

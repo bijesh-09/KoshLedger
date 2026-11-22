@@ -82,11 +82,7 @@ export function ProductViewPage() {
       .catch((err) => {
         if (err?.name === "AbortError") return
         setProducts([])
-        setError(
-          err?.status === 0
-            ? "Cannot reach the server. Is the API running?"
-            : err?.message || "Could not load this product.",
-        )
+        setError(err?.message || "Could not load this product.")
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false)
