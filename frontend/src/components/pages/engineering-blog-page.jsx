@@ -886,7 +886,7 @@ export function EngineeringBlogPage() {
           >
             <P>
               The frontend is React with Vite, Tailwind, and shadcn components. It
-              took about two weeks including deployment, and it was my first real
+              took about one week including deployment, and it was my first real
               backend-to-frontend integration. AI built most of the shadcn UI and a
               lot of the frontend logic. I wrote the three files that decide how
               the app talks to the server:
