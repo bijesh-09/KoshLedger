@@ -132,8 +132,8 @@ uv sync --locked
 ### 2. Create both databases
 
 ```bash
-createdb koshledger
-createdb koshledger_test
+CREATE DATABASE koshledger;
+CREATE DATABASE koshledger_test;
 ```
 
 Tests migrate and clean the test database themselves. Both databases must exist and the credentials must be valid, because the app builds an engine at import time.
