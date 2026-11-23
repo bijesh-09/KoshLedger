@@ -29,8 +29,8 @@ jobs:
     timeout-minutes: 30
 
     environment:
-      name: build_image
-      
+      name: prod
+
     env:
       DATABASE_HOSTNAME: localhost
       DATABASE_USERNAME: postgres
