@@ -10,17 +10,17 @@ import { CONTACT_SECTION_ID } from "@/lib/scroll"
 const SOCIALS = [
   {
     label: "GitHub",
-    href: "https://github.com/bijesh-09",
+    href: "https://github.com/bijesh-09/KoshLedger",
     icon: GithubLogo,
   },
   {
     label: "X",
-    href: "https://x.com/Bijesh_09",
+    href: "https://x.com/Bijesh_09/status/2124802125142339816?ref_url=",
     icon: XLogo,
   },
   {
     label: "LinkedIn",
-    href: "https://www.linkedin.com/in/bijesh-karanjit-3296b427a/",
+    href: "https://lnkd.in/p/gjpwGE7G",
     icon: LinkedinLogo,
   },
 ]
