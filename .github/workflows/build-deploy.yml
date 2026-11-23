@@ -28,6 +28,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
+    environment:
+      name: build_image
+      
     env:
       DATABASE_HOSTNAME: localhost
       DATABASE_USERNAME: postgres
