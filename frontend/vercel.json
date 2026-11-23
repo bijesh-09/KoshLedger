@@ -4,6 +4,8 @@
     "deploymentEnabled": false
   },
   "rewrites": [
+    { "source": "/health", "destination": "https://koshledger-backend-latest.onrender.com/health" },
+
     { "source": "/auth/:path*", "destination": "https://koshledger-backend-latest.onrender.com/auth/:path*" },
 
     { "source": "/users", "destination": "https://koshledger-backend-latest.onrender.com/users" },

@@ -1,13 +1,13 @@
 const TOKEN_KEY = "kosh.access_token"
 
-// A Render free instance sleeps after ~15 min idle and takes up to ~60s to boot,
-// so EVERY route has to survive one cold start. Timeouts are therefore generous
-// by default and only differ where a route is legitimately slower than a read.
-// (Neon itself wakes in a few hundred ms, so it is not the bottleneck.)
-const DEFAULT_TIMEOUT_MS = 75_000
+// A Render free instance sleeps after ~15 min idle. Measured cold boots have
+// taken ~90s, so EVERY route has to survive one: the default is deliberately
+// longer than the slowest boot we have seen, and only shorter where a route is
+// legitimately allowed to fail fast. (Neon wakes in a few hundred ms.)
+const DEFAULT_TIMEOUT_MS = 120_000
 const ROUTE_TIMEOUTS = [
-  [/^\/auth\/(login|register)$/, 90_000], // cold instance + bcrypt hashing
-  [/^\/(transfers|purchases|faucet)$/, 90_000], // DB transaction / row locks
+  [/^\/auth\/(login|register)$/, 120_000], // cold instance + HIBP + hashing
+  [/^\/(transfers|purchases|faucet)$/, 120_000], // DB transaction / row locks
   [/^\/users\?/, 45_000], // typeahead: fail fast, the user is still typing
 ]
 
@@ -17,8 +17,9 @@ const MAX_RETRIES = 1
 const RETRY_DELAY_MS = 2_000
 
 // How long a request may stay silent before we tell the user the server is
-// cold-starting. A spinner with no explanation for 90s looks broken, so after
-// this point the UI shows a "starting up" notice until every request settles.
+// cold-starting. A spinner with no explanation for a minute looks broken, so
+// after this point the UI shows a "starting up" notice until every request
+// settles.
 const SLOW_REQUEST_MS = 4_000
 
 // Tiny external store for that notice. It tracks *concurrent* requests: the
@@ -304,4 +305,12 @@ export async function request(
   }
 
   throw lastError
+}
+
+// Sent once when the app boots. The landing page is static, so without this a
+// visitor on a sleeping instance would sit on a page that never talks to the
+// server and would never see the wake-up notice. Errors are ignored: the ping
+// exists to start the boot, not to report anything.
+export function warmupServer() {
+  request("/health", { auth: false }).catch(() => null)
 }

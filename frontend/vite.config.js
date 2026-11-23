@@ -11,6 +11,7 @@ import { defineConfig } from 'vite'
 const api = { target: "http://127.0.0.1:8000", changeOrigin: true }
 
 const proxy = {
+  "/health": api,
   "/auth": api,
   "/users": api,
   "/products": api,

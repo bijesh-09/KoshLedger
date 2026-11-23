@@ -79,6 +79,13 @@ async def validation_exception_handler(
 async def root():
     return {"message": "Hello World"}
 
+@app.get("/health")
+async def health():
+    # Deliberately does not touch the database. The frontend pings this on boot
+    # to wake the free-tier instance, so it should answer as soon as the process
+    # is up and stay cheap enough to call on every page load.
+    return {"status": "ok"}
+
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(faucet.router)

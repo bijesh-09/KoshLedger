@@ -23,7 +23,8 @@ export function ServerWakeNotice() {
     >
       <Spinner className="size-4 shrink-0 text-primary" />
       <p>
-        The server is waking up. This can take a minute or two — please wait.
+        The server is waking up. Free-tier instances sleep when idle, so the
+        first load can take about a minute — please wait.
       </p>
     </div>
   )
